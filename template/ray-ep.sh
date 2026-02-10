@@ -5,6 +5,9 @@ set -e
 # This script can start Ray as either head or worker node
 # Mode is determined by whitelist and health check
 
+# Set PATH for Ray (conda environment)
+export PATH="/home/ray/anaconda3/bin:$PATH"
+
 echo "Starting Ray node..."
 HOSTNAME=$(hostname)
 echo "Hostname: $HOSTNAME"
