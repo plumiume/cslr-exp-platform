@@ -125,28 +125,84 @@ services:
 
 ノードのホワイトリストとヘルスチェック設定。
 
+**重要**: `head_whitelist` には、**このファイルを配置したマシンから到達可能なホスト名**を指定してください。
+
+#### シングルホスト環境（Docker Compose単独）
+
 ```yaml
 head_whitelist:
-  - ray-cpu
+  - ray-cpu      # docker-composeで定義されたコンテナのホスト名
   - ray-gpu
 
-head_address: null  # 明示的なHeadアドレス（省略時はホワイトリストから自動決定）
+head_address: null
 
 health_service:
   url: "http://health:8080"
   timeout: 1
 ```
 
+#### マルチホスト環境
+
+複数の物理ホストでRayクラスターを構成する場合：
+
+1. **各ホストで名前解決を設定**
+   - DNS または `/etc/hosts` で他のホストのホスト名を解決できるようにする
+   - 例: `/etc/hosts` に `192.168.1.10 ray-cpu-host-a` を追加
+
+2. **nodes.yaml を各ホストに配置**（同じ内容を共有）
+   ```yaml
+   head_whitelist:
+     - ray-cpu-host-a    # host-a のRay CPUノード
+     - ray-gpu-host-a    # host-a のRay GPUノード
+     - ray-cpu-host-b    # host-b のRay CPUノード
+   
+   head_address: null
+   
+   health_service:
+     url: "http://health:8080"  # 各ホストのローカルヘルスチェック
+     timeout: 1
+   ```
+
+3. **docker-compose.yaml でホスト名を設定**
+   ```yaml
+   services:
+     ray-cpu:
+       hostname: ray-cpu-host-a  # ホワイトリストと一致させる
+   ```
+
 ## Head/Worker 自動判定
 
 `ray-ep.sh` エントリポイントスクリプトが起動時に以下のロジックでモードを決定：
 
-1. ホスト名が `nodes.yaml` のホワイトリストに含まれるか確認
-2. ヘルスチェックサービスに接続（`timeout: 1s`）
-3. 他のホワイトリストノードに既存Headがいるか確認
-4. 条件に応じて Head または Worker として起動
+### 判定フロー
 
-ホワイトリスト外のノードは自動的に Worker モードで起動し、`HEAD_ADDRESS` 環境変数またはホワイトリスト最初のノードに接続します。
+1. **ホワイトリストチェック**
+   - コンテナの `hostname` が `nodes.yaml` の `head_whitelist` に含まれるか確認
+   - マルチホストの場合、ネットワーク経由で到達可能なホスト名である必要がある
+
+2. **ヘルスチェックサービス接続**
+   - ヘルスチェックサービスに接続（`timeout: 1s`）
+   - 利用可能 → 既存Headノード検索へ
+   - 利用不可 → Head モードで起動（フェイルセーフ）
+
+3. **既存Head検出**
+   - 他のホワイトリストノードに TCP 接続を試行（`RAY_HEAD_PORT`）
+   - 既存Head発見 → Worker モードで接続
+   - 未発見 → Head モードで起動（最初のノード）
+
+4. **起動モード決定**
+   - **Head モード**: 最初に起動したホワイトリストノード
+   - **Worker モード**: 既存Headが見つかった場合、またはホワイトリスト外
+
+### ホワイトリスト外ノード
+
+ホワイトリスト外のノードは自動的に Worker モードで起動し、以下の優先順位で接続先を決定：
+
+1. 環境変数 `HEAD_ADDRESS` が設定されている場合、それを使用
+2. `nodes.yaml` の `head_address` が設定されている場合、それを使用
+3. ホワイトリストの最初のノード + `RAY_HEAD_PORT` に接続
+
+マルチホスト環境では、Workerノードから Head ノードへのネットワーク到達性を確保してください。
 
 ## ディレクトリ構成
 
@@ -182,11 +238,77 @@ docker compose -f _build/compose.yaml exec ray-cpu ray status
 docker compose -f _build/compose.yaml exec ray-cpu cat /tmp/ray/session_latest/logs/raylet.out
 ```
 
+### マルチホスト環境での接続問題
+
+#### Worker ノードが Head に接続できない
+
+**症状**: Worker ノードが "Cannot connect to Ray head node" エラーで起動失敗
+
+**原因と対処法**:
+
+1. **ホスト名解決の問題**
+   ```bash
+   # Worker ノード側で Head ノードのホスト名を解決できるか確認
+   docker compose -f _build/compose.yaml exec ray-cpu getent hosts ray-cpu-host-a
+   
+   # 解決できない場合、/etc/hosts または DNS を設定
+   # ホストマシンの /etc/hosts に追加:
+   192.168.1.10 ray-cpu-host-a
+   192.168.1.11 ray-gpu-host-b
+   ```
+
+2. **ネットワーク到達性の問題**
+   ```bash
+   # Worker ノードから Head ノードへの接続テスト
+   docker compose -f _build/compose.yaml exec ray-cpu ping -c 3 ray-cpu-host-a
+   
+   # ポート接続テスト
+   docker compose -f _build/compose.yaml exec ray-cpu nc -zv ray-cpu-host-a 6379
+   ```
+
+3. **ファイアウォール設定**
+   ```bash
+   # Head ノード側で Ray ポートを開放（Linuxの場合）
+   sudo ufw allow 6379/tcp  # Ray Head port
+   sudo ufw allow 8265/tcp  # Dashboard port
+   sudo ufw allow 10001/tcp # Ray Client port
+   ```
+
+4. **Docker ネットワーク設定**
+   - 各ホストで Docker が異なるネットワークを使用している場合、overlay network または host network モードを検討
+   - `config.yaml` の `network.subnet` が他のネットワークと競合していないか確認
+
+#### ホワイトリストノードが Head にならない
+
+**症状**: ホワイトリストに登録されているが、Worker モードで起動してしまう
+
+**確認事項**:
+
+1. **ホスト名の一致**
+   ```bash
+   # コンテナ内のホスト名を確認
+   docker compose -f _build/compose.yaml exec ray-cpu hostname
+   
+   # nodes.yaml の head_whitelist と一致しているか確認
+   ```
+
+2. **ホワイトリストの記載順序**
+   - `head_whitelist` の順番で Head 候補が決定される
+   - 最初のノードが起動時に Head になるように設定
+
+3. **ヘルスチェックサービスの状態**
+   ```bash
+   # ヘルスチェックサービスが正常に動作しているか確認
+   docker compose -f _build/compose.yaml logs health
+   curl http://localhost:8888
+   ```
+
 ### 既知の問題
 
 1. **`--node-ip-address` は使用しない**: Ray は自動的にコンテナのIPを検出します
 2. **GCS health check failures**: ノードIPが正しく設定されていない場合に発生
 3. **ポート衝突**: Redis(6381) と Ray head(6379/6380) のホスト側ポートが重ならないよう注意
+4. **マルチホストでのホスト名解決**: Docker の組み込み DNS は単一ホスト内のみ有効。マルチホストでは外部 DNS または `/etc/hosts` が必要
 
 ## 依存関係
 

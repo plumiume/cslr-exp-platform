@@ -58,15 +58,19 @@ if [ "$IN_WHITELIST" = "true" ]; then
         
         # Check if head node already exists
         HEAD_EXISTS=false
+        echo "Checking for existing head nodes in whitelist..."
         for node in $WHITELIST; do
             if [ "$node" != "$HOSTNAME" ]; then
                 # Try to connect to potential head node
                 HEAD_PORT="${RAY_HEAD_PORT:-6379}"
-                if timeout 1 bash -c "</dev/tcp/$node/$HEAD_PORT" 2>/dev/null; then
-                    echo "✓ Head node already exists on $node"
+                echo "  Checking $node:$HEAD_PORT..."
+                if timeout 2 bash -c "</dev/tcp/$node/$HEAD_PORT" 2>/dev/null; then
+                    echo "✓ Head node already exists on $node (reachable)"
                     HEAD_EXISTS=true
                     RAY_ADDRESS="$node:$HEAD_PORT"
                     break
+                else
+                    echo "  ✗ $node:$HEAD_PORT not reachable (no head node or network issue)"
                 fi
             fi
         done
@@ -112,6 +116,9 @@ else
     HEAD_HOST=$(echo "$RAY_ADDRESS" | cut -d: -f1)
     HEAD_PORT=$(echo "$RAY_ADDRESS" | cut -d: -f2)
     
+    echo "  Target: $HEAD_HOST:$HEAD_PORT"
+    echo "  Note: Ensure $HEAD_HOST is reachable from this host (check DNS/hosts file)"
+    
     for i in {1..60}; do
         if timeout 2 bash -c "</dev/tcp/$HEAD_HOST/$HEAD_PORT" 2>/dev/null; then
             echo "✓ Ray head node is reachable!"
@@ -119,6 +126,11 @@ else
         fi
         if [ $i -eq 60 ]; then
             echo "ERROR: Cannot connect to Ray head node after 60 seconds"
+            echo "  Troubleshooting:"
+            echo "    1. Check if head node is running: docker ps"
+            echo "    2. Verify network connectivity: ping $HEAD_HOST"
+            echo "    3. Check DNS/hosts resolution: getent hosts $HEAD_HOST"
+            echo "    4. Verify firewall allows port $HEAD_PORT"
             exit 1
         fi
         [ $((i % 10)) -eq 0 ] && echo "  Waiting... ($i/60)"

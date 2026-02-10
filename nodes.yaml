@@ -3,6 +3,16 @@
 
 # Headノード候補のホワイトリスト
 # この順序で最初にヘルスチェックを通過したノードがHEADになる
+#
+# シングルホスト環境:
+#   - Dockerコンテナのホスト名（docker-composeのhostnameフィールド）を記載
+#   - 例: ray-cpu, ray-gpu
+#
+# マルチホスト環境:
+#   - nodes.yamlを配置したマシンから到達可能なホスト名を記載
+#   - 各物理ホストで同じnodes.yamlを共有、または個別に設定
+#   - 例: ray-cpu-host-a, ray-gpu-host-a, ray-cpu-host-b
+#   - ネットワーク経由で名前解決できる必要がある（DNS、/etc/hostsなど）
 head_whitelist:
   - ray-cpu
   - ray-gpu
