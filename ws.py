@@ -63,7 +63,7 @@ class RayCPUConfig(BaseModel):
 
     enabled: bool = Field(default=True, description="Enable Ray CPU service")
     image: str = Field(default="rayproject/ray:latest", description="Docker image")
-    cpus: str = Field(default="4", description="CPU limit")
+    cpus: int = Field(default=4, description="CPU limit")
     memory: str = Field(default="8g", description="Memory limit")
     dashboard_port: int = Field(default=8265, description="Ray Dashboard port")
     client_port: int = Field(default=10001, description="Ray Client port")
@@ -80,7 +80,7 @@ class RayGPUConfig(BaseModel):
     enabled: bool = Field(default=True, description="Enable Ray GPU service")
     image: str = Field(default="rayproject/ray:latest-gpu", description="Docker image")
     runtime: str = Field(default="nvidia", description="Container runtime")
-    cpus: str = Field(default="4", description="CPU limit")
+    cpus: int = Field(default=4, description="CPU limit")
     memory: str = Field(default="16g", description="Memory limit")
     dashboard_port: int = Field(default=8266, description="Ray Dashboard port")
     client_port: int = Field(default=10002, description="Ray Client port")
