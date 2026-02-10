@@ -12,10 +12,10 @@ dependencies = [
 ]
 
 [tool.setuptools]
-py-modules = ["ws"]
+packages = ["ws_src"]
 
 [project.scripts]
-ws = "ws:main"
+ws = "ws_src.commands:main"
 
 [tool.uv]
 package = true

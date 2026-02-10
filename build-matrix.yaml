@@ -1,0 +1,70 @@
+# Docker Build Matrix Configuration
+# 複数のCUDA/Python/ターゲットの組み合わせでビルドを実行するための設定
+
+matrix:
+  # CUDA 12.x系 + Python 3.13
+  - cuda_version: "12.8.1"
+    python_version: "3.13"
+    cuda_tag: "cu128"
+    targets:
+      - name: "devel"
+        tag: "devel-torch2.8.0-cu128-py313"
+      - name: "runtime"
+        tag: "runtime-torch2.8.0-cu128-py313"
+      - name: "ray-devel"
+        tag: "ray-devel-torch2.8.0-cu128-py313"
+      - name: "ray-runtime"
+        tag: "ray-runtime-torch2.8.0-cu128-py313"
+      - name: "marimo-devel"
+        tag: "marimo-devel-torch2.8.0-cu128-py313"
+      - name: "marimo-runtime"
+        tag: "marimo-torch2.8.0-cu128-py313-runtime"
+  
+  # CUDA 13.x系 + Python 3.14
+  - cuda_version: "13.1.1"
+    python_version: "3.14"
+    cuda_tag: "cu130"
+    targets:
+      - name: "devel"
+        tag: "devel-torch2.9.0-cu130-py314"
+      - name: "runtime"
+        tag: "runtime-torch2.9.0-cu130-py314"
+      - name: "ray-devel"
+        tag: "ray-devel-torch2.9.0-cu130-py314"
+      - name: "ray-runtime"
+        tag: "ray-runtime-torch2.9.0-cu130-py314"
+      - name: "marimo-devel"
+        tag: "marimo-devel-torch2.9.0-cu130-py314"
+      - name: "marimo-runtime"
+        tag: "marimo-torch2.9.0-cu130-py314-runtime"
+  
+  # CUDA 12.x系 + Python 3.14
+  - cuda_version: "12.8.1"
+    python_version: "3.14"
+    cuda_tag: "cu128"
+    targets:
+      - name: "devel"
+        tag: "devel-torch2.8.0-cu128-py314"
+      - name: "runtime"
+        tag: "runtime-torch2.8.0-cu128-py314"
+      - name: "ray-devel"
+        tag: "ray-devel-torch2.8.0-cu128-py314"
+      - name: "ray-runtime"
+        tag: "ray-runtime-torch2.8.0-cu128-py314"
+      - name: "marimo-devel"
+        tag: "marimo-devel-torch2.8.0-cu128-py314"
+      - name: "marimo-runtime"
+        tag: "marimo-torch2.8.0-cu128-py314-runtime"
+
+# ビルド設定
+build_options:
+  platform: "linux/amd64"
+  image_prefix: "plumiume/cslr-exp-platform"
+  
+# 最小構成（テスト用）
+minimal_build:
+  cuda_version: "12.8.1"
+  python_version: "3.13"
+  cuda_tag: "cu128"
+  target: "marimo-runtime"
+  tag: "marimo-torch2.8.0-cu128-py313-runtime"

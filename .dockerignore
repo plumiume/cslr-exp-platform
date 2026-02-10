@@ -1,0 +1,49 @@
+# Git
+.git
+.gitignore
+
+# Python
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+*.egg
+*.egg-info
+dist
+build
+.eggs
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Virtual environments
+.venv
+venv
+ENV
+env
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+*~
+
+# Build outputs
+_build
+*.log
+
+# Data
+data/
+
+# Notes
+notes/
+CLAUDE.md
+
+# Config (実際のconfig.yamlは含めない、example.yamlのみ)
+config.yaml
+nodes.yaml
+
+# Lock files
+uv.lock

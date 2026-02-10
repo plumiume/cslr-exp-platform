@@ -13,8 +13,20 @@ x-gpu: &gpu
 x-ray: &ray
 {% if services.ray.cpu.enabled %}
   image: {{ services.ray.cpu.image }}
+{% if services.ray.cpu.build and services.ray.cpu.build.enabled %}
+  build:
+    context: {{ services.ray.cpu.build.context }}
+    dockerfile: {{ services.ray.cpu.build.dockerfile }}
+    target: {{ services.ray.cpu.build.target }}
+{% endif %}
 {% elif services.ray.gpu.enabled %}
   image: {{ services.ray.gpu.image }}
+{% if services.ray.gpu.build and services.ray.gpu.build.enabled %}
+  build:
+    context: {{ services.ray.gpu.build.context }}
+    dockerfile: {{ services.ray.gpu.build.dockerfile }}
+    target: {{ services.ray.gpu.build.target }}
+{% endif %}
 {% endif %}
   restart: unless-stopped
   networks:
@@ -37,6 +49,13 @@ services:
 {% if services.ray.cpu.enabled %}
   ray-cpu:
     <<: *ray
+{% if services.ray.cpu.build and services.ray.cpu.build.enabled %}
+    image: {{ services.ray.cpu.image }}
+    build:
+      context: {{ services.ray.cpu.build.context }}
+      dockerfile: {{ services.ray.cpu.build.dockerfile }}
+      target: {{ services.ray.cpu.build.target }}
+{% endif %}
     container_name: {{ project.name }}-ray-cpu
     hostname: ray-cpu
     restart: "no"
@@ -46,11 +65,18 @@ services:
       - RAY_DASHBOARD_PORT={{ services.ray.cpu.dashboard_port }}
       - RAY_CLIENT_PORT={{ services.ray.cpu.client_port }}
       - RAY_NUM_CPUS={{ services.ray.cpu.cpus }}
+{% if services.ray.cpu.build and services.ray.cpu.build.enabled %}
+      - USE_CONDA_ENV=1
+{% endif %}
     volumes:
       - ../template/ray-ep.sh:/app/ray-ep.sh:ro
       - ../nodes.yaml:/config/nodes.yaml:ro
     user: root
+{% if services.ray.cpu.build and services.ray.cpu.build.enabled %}
+    entrypoint: ["/bin/bash", "-c", "apt-get update -qq && apt-get install -y -qq curl > /dev/null 2>&1 && /app/ray-ep.sh"]
+{% else %}
     entrypoint: ["/bin/bash", "-c", "apt-get update -qq && apt-get install -y -qq curl > /dev/null 2>&1 && su ray -c '/app/ray-ep.sh'"]
+{% endif %}
 {% if services.health.enabled %}
     depends_on:
       - health
@@ -69,7 +95,13 @@ services:
 {% if host.has_gpu and services.ray.gpu.enabled %}
   ray-gpu:
     <<: [*ray, *gpu]
+{% if services.ray.gpu.build and services.ray.gpu.build.enabled %}
     image: {{ services.ray.gpu.image }}
+    build:
+      context: {{ services.ray.gpu.build.context }}
+      dockerfile: {{ services.ray.gpu.build.dockerfile }}
+      target: {{ services.ray.gpu.build.target }}
+{% endif %}
     container_name: {{ project.name }}-ray-gpu
     hostname: ray-gpu
     restart: "no"
@@ -80,11 +112,18 @@ services:
       - RAY_CLIENT_PORT={{ services.ray.gpu.client_port }}
       - RAY_NUM_GPUS=1
       - RAY_NUM_CPUS={{ services.ray.gpu.cpus }}
+{% if services.ray.gpu.build and services.ray.gpu.build.enabled %}
+      - USE_CONDA_ENV=1
+{% endif %}
     volumes:
       - ../template/ray-ep.sh:/app/ray-ep.sh:ro
       - ../nodes.yaml:/config/nodes.yaml:ro
     user: root
+{% if services.ray.gpu.build and services.ray.gpu.build.enabled %}
+    entrypoint: ["/bin/bash", "-c", "apt-get update -qq && apt-get install -y -qq curl > /dev/null 2>&1 && /app/ray-ep.sh"]
+{% else %}
     entrypoint: ["/bin/bash", "-c", "apt-get update -qq && apt-get install -y -qq curl > /dev/null 2>&1 && su - ray -c '/app/ray-ep.sh'"]
+{% endif %}
 {% if services.ray.cpu.enabled or services.health.enabled %}
     depends_on:
 {% if services.ray.cpu.enabled %}
@@ -121,10 +160,11 @@ services:
     image: {{ services.mlflow.image }}
     container_name: {{ project.name }}-mlflow
     restart: unless-stopped
+    command: mlflow server --host 0.0.0.0 --port 5000
     ports:
       - "{{ services.mlflow.port }}:5000"
     environment:
-      - MLFLOW_BACKEND_STORE_URI=postgresql://$${POSTGRES_USER:-{{ services.mlflow.postgres.user }}}:$${POSTGRES_PASSWORD:-{{ services.mlflow.postgres.password }}}@mlflow-postgres/$${POSTGRES_DB:-{{ services.mlflow.postgres.database }}}
+      - MLFLOW_BACKEND_STORE_URI=postgresql://{{ services.mlflow.postgres.user }}:{{ services.mlflow.postgres.password }}@mlflow-postgres/{{ services.mlflow.postgres.database }}
       - MLFLOW_ARTIFACT_ROOT=/mlflow/artifacts
     volumes:
       - {{ volumes.mlflow_data }}:/mlflow/artifacts
@@ -142,9 +182,9 @@ services:
     container_name: {{ project.name }}-mlflow-postgres
     restart: unless-stopped
     environment:
-      POSTGRES_USER: $${POSTGRES_USER:-{{ services.mlflow.postgres.user }}}
-      POSTGRES_PASSWORD: $${POSTGRES_PASSWORD:-{{ services.mlflow.postgres.password }}}
-      POSTGRES_DB: $${POSTGRES_DB:-{{ services.mlflow.postgres.database }}}
+      POSTGRES_USER: {{ services.mlflow.postgres.user }}
+      POSTGRES_PASSWORD: {{ services.mlflow.postgres.password }}
+      POSTGRES_DB: {{ services.mlflow.postgres.database }}
     volumes:
       - {{ volumes.postgres_data }}:/var/lib/postgresql/data
     networks:
@@ -154,10 +194,27 @@ services:
 {% if services.marimo.enabled %}
   marimo:
     image: {{ services.marimo.image }}
+{% if services.marimo.build and services.marimo.build.enabled %}
+    build:
+      context: {{ services.marimo.build.context }}
+      dockerfile: {{ services.marimo.build.dockerfile }}
+      target: {{ services.marimo.build.target }}
+{% endif %}
     container_name: {{ project.name }}-marimo
     restart: unless-stopped
+{% if services.marimo.build and services.marimo.build.enabled %}
+    environment:
+      - USE_CONDA_ENV=1
+    command: ["conda", "run", "-n", "py", "marimo", "edit", "--host", "0.0.0.0", "--port", "8080", "/workspace"]
+{% endif %}
     ports:
       - "{{ services.marimo.port }}:8080"
+    volumes:
+      - ../:/workspace
+{% if services.ray.cpu.enabled %}
+    depends_on:
+      - ray-cpu
+{% endif %}
     networks:
       - ray-network
 {% endif %}

@@ -5,8 +5,21 @@ set -e
 # This script can start Ray as either head or worker node
 # Mode is determined by whitelist and health check
 
-# Set PATH for Ray (conda environment)
-export PATH="/home/ray/anaconda3/bin:$PATH"
+# Detect environment type and set appropriate paths
+if [ -d "/opt/conda" ] && [ -n "${USE_CONDA_ENV:-}" ]; then
+    # Custom ray-runtime image (conda environment in /opt/conda)
+    export PATH="/opt/conda/bin:$PATH"
+    export CONDA_DIR="/opt/conda"
+    RAY_EXEC="conda run -n py ray"
+    PYTHON_EXEC="conda run -n py python"
+    echo "Using custom conda environment: /opt/conda/envs/py"
+else
+    # Official rayproject/ray image (conda in /home/ray/anaconda3)
+    export PATH="/home/ray/anaconda3/bin:$PATH"
+    RAY_EXEC="ray"
+    PYTHON_EXEC="python"
+    echo "Using rayproject/ray default environment"
+fi
 
 echo "Starting Ray node..."
 HOSTNAME=$(hostname)
@@ -103,7 +116,11 @@ fi
 echo "Mode: $MODE"
 
 # Build ray start command
-RAY_CMD="ray start"
+if [ -n "${USE_CONDA_ENV:-}" ]; then
+    RAY_CMD="conda run -n py ray start"
+else
+    RAY_CMD="ray start"
+fi
 
 if [ "$MODE" = "head" ]; then
     RAY_CMD="$RAY_CMD --head --dashboard-host=0.0.0.0"
@@ -146,21 +163,18 @@ fi
 
 # Start Ray
 echo "Executing: $RAY_CMD"
-eval $RAY_CMD
-
-# Wait for Ray to be fully ready
-echo "Waiting for Ray to be ready..."
+RAY_STATUS_CMD="${RAY_EXEC} status"
 for i in {1..60}; do
-    if ray status > /dev/null 2>&1; then
+    if eval $RAY_STATUS_CMD > /dev/null 2>&1; then
         if [ "$MODE" = "head" ]; then
-            RAY_NODE_IP=$(ray status 2>&1 | grep -oP '(?<=Local node IP: )[\d.]+' || hostname -I | awk '{print $1}')
+            RAY_NODE_IP=$(eval $RAY_STATUS_CMD 2>&1 | grep -oP '(?<=Local node IP: )[\d.]+' || hostname -I | awk '{print $1}')
             echo "✓ Ray cluster is ready! Node IP: $RAY_NODE_IP"
             echo "✓ Dashboard: http://$RAY_NODE_IP:${RAY_DASHBOARD_PORT:-8265}"
             echo "✓ Connect from other hosts: ray start --address=<HOST_IP>:${RAY_HEAD_PORT:-6379}"
             [ -n "$RAY_NUM_GPUS" ] && echo "✓ GPUs available: $RAY_NUM_GPUS"
         else
             echo "✓ Ray worker successfully joined the cluster!"
-            ray status
+            eval $RAY_STATUS_CMD
         fi
         break
     fi

@@ -14,20 +14,29 @@ def load_config_model(project_root: Path):
         raise RuntimeError(f"Failed to load module spec for {ws_path}")
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
-    return module.Config
+    return module.Config, module.NodesConfig
 
 
 def main() -> None:
     project_root = Path(__file__).resolve().parents[1]
-    config_model = load_config_model(project_root)
-    schema = config_model.model_json_schema()
-    schema.setdefault("$schema", "https://json-schema.org/draft/2020-12/schema")
+    config_model, nodes_model = load_config_model(project_root)
 
-    output_path = project_root / ".vscode" / "config.schema.json"
-    output_path.parent.mkdir(parents=True, exist_ok=True)
+    # Generate config.yaml schema
+    config_schema = config_model.model_json_schema()
+    config_schema.setdefault("$schema", "https://json-schema.org/draft/2020-12/schema")
+    config_output_path = project_root / ".vscode" / "config.schema.json"
+    config_output_path.parent.mkdir(parents=True, exist_ok=True)
+    config_output_path.write_text(
+        json.dumps(config_schema, indent=2, ensure_ascii=True) + "\n",
+        encoding="utf-8",
+    )
 
-    output_path.write_text(
-        json.dumps(schema, indent=2, ensure_ascii=True) + "\n",
+    # Generate nodes.yaml schema
+    nodes_schema = nodes_model.model_json_schema()
+    nodes_schema.setdefault("$schema", "https://json-schema.org/draft/2020-12/schema")
+    nodes_output_path = project_root / ".vscode" / "nodes.schema.json"
+    nodes_output_path.write_text(
+        json.dumps(nodes_schema, indent=2, ensure_ascii=True) + "\n",
         encoding="utf-8",
     )
 

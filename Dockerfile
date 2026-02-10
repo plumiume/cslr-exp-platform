@@ -31,6 +31,7 @@ ENV PATH=${CONDA_DIR}/bin:${PATH}
 RUN apt-get update && apt-get install -y --no-install-recommends \
         wget ca-certificates git build-essential curl \
         cmake ninja-build \
+    && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
 # Miniforge (conda-forge デフォルト)
@@ -49,12 +50,14 @@ SHELL ["conda", "run", "-n", "py", "/bin/bash", "-c"]
 # --- PyTorch ---
 RUN pip install --no-cache-dir \
         torch torchvision torchaudio \
-        --index-url https://download.pytorch.org/whl/${CUDA_TAG}
+        --index-url https://download.pytorch.org/whl/${CUDA_TAG} \
+    && rm -rf ~/.cache/pip /tmp/*
 
 RUN python -c "import torch; print(f'PyTorch {torch.__version__}, CUDA {torch.version.cuda}, cuDNN {torch.backends.cudnn.version()}')"
 
 # --- torch_geometric 本体 ---
-RUN pip install --no-cache-dir torch_geometric
+RUN pip install --no-cache-dir torch_geometric \
+    && rm -rf ~/.cache/pip /tmp/*
 
 # --- PyG 拡張: wheel → ソースビルド ---
 RUN TORCH_VERSION=$(python -c "import torch; print(torch.__version__.split('+')[0])") \
@@ -76,14 +79,17 @@ RUN python -c "import pyg_lib" 2>/dev/null \
     && echo "=== pyg_lib already installed ===" \
     || ( echo "=== [Step C] Source building pyg_lib ===" \
         && pip install --no-cache-dir --no-build-isolation ninja \
-        && pip install --no-cache-dir --no-build-isolation git+https://github.com/pyg-team/pyg-lib.git )
+        && pip install --no-cache-dir --no-build-isolation git+https://github.com/pyg-team/pyg-lib.git ) \
+    && rm -rf ~/.cache/pip /tmp/* /root/.cargo
 
-# 確認
+# 確認 & 最終クリーニング
 RUN echo "=== devel Verification ===" \
     && python -c "import sys; print(f'Python={sys.version}')" \
     && python -c "import torch; print(f'torch={torch.__version__}, CUDA={torch.version.cuda}')" \
     && python -c "import torch_geometric; print(f'torch_geometric={torch_geometric.__version__}')" \
-    && python -c "exec('try:\n import pyg_lib\n print(f\"pyg_lib={pyg_lib.__version__}\")\nexcept Exception:\n print(\"pyg_lib: NOT AVAILABLE\")')"
+    && python -c "exec('try:\n import pyg_lib\n print(f\"pyg_lib={pyg_lib.__version__}\")\nexcept Exception:\n print(\"pyg_lib: NOT AVAILABLE\")')" \
+    && conda clean -afy \
+    && rm -rf ~/.cache /tmp/* /var/tmp/*
 
 WORKDIR /workspace
 CMD ["conda", "run", "-n", "py", "bash"]
@@ -99,6 +105,7 @@ ENV PATH=${CONDA_DIR}/bin:${PATH}
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
         ca-certificates curl git \
+    && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=devel ${CONDA_DIR} ${CONDA_DIR}
@@ -123,6 +130,7 @@ SHELL ["conda", "run", "-n", "py", "/bin/bash", "-c"]
 # Bazelisk (Ray ソースビルドに必要 — nightly が使えなかった場合)
 RUN apt-get update && apt-get install -y --no-install-recommends \
         pkg-config psmisc unzip \
+    && apt-get clean \
     && rm -rf /var/lib/apt/lists/* \
     && wget -qO /usr/local/bin/bazel \
         "https://github.com/bazelbuild/bazelisk/releases/latest/download/bazelisk-linux-amd64" \
@@ -138,14 +146,18 @@ RUN pip install --no-cache-dir \
         && cd /tmp/ray/python \
         && pip install --no-cache-dir -r requirements.txt \
         && RAY_INSTALL_JAVA=0 pip install --no-cache-dir . --verbose \
-        && cd / && rm -rf /tmp/ray )
+        && cd / && rm -rf /tmp/ray ) \
+    && rm -rf ~/.cache/pip ~/.cache/bazel /tmp/* /var/tmp/*
 
 # Ray extras (既にインストール済みなら依存のみ追加)
 RUN pip install --no-cache-dir "ray[data,train,tune,serve]" \
-    || echo "=== Note: some Ray extras may not be resolved ==="
+    || echo "=== Note: some Ray extras may not be resolved ===" \
+    && rm -rf ~/.cache/pip /tmp/*
 
 RUN echo "=== ray-devel Verification ===" \
-    && python -c "import ray; print(f'ray={ray.__version__}')"
+    && python -c "import ray; print(f'ray={ray.__version__}')" \
+    && conda clean -afy \
+    && rm -rf ~/.cache /tmp/* /var/tmp/*
 
 WORKDIR /workspace
 CMD ["conda", "run", "-n", "py", "bash"]
@@ -173,10 +185,13 @@ FROM ray-devel AS marimo-devel
 
 SHELL ["conda", "run", "-n", "py", "/bin/bash", "-c"]
 
-RUN pip install --no-cache-dir marimo
+RUN pip install --no-cache-dir marimo \
+    && rm -rf ~/.cache/pip /tmp/*
 
 RUN echo "=== marimo-devel Verification ===" \
-    && python -c "import marimo; print(f'marimo={marimo.__version__}')"
+    && python -c "import marimo; print(f'marimo={marimo.__version__}')" \
+    && conda clean -afy \
+    && rm -rf ~/.cache /tmp/* /var/tmp/*
 
 WORKDIR /workspace
 CMD ["conda", "run", "-n", "py", "bash"]
