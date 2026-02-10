@@ -37,8 +37,11 @@ Ray クラスターベースの実験プラットフォーム（Docker Compose�
 ### 1. uv のインストール
 
 ```bash
-# uv のインストール (未インストールの場合)
-winget install --id=astral-sh.uv -e
+# WSL / Ubuntu の場合
+curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# Windows の場合
+# winget install --id=astral-sh.uv -e
 ```
 
 ### 2. 設定ファイルの準備
@@ -52,16 +55,16 @@ cp config.example.yaml config.yaml
 
 ```bash
 # 設定ファイルを生成（_build/compose.yaml に出力）
-uv run python ws generate
+uv run ws generate
 
 # クラスターを起動
-uv run python ws up -d
+uv run ws up -d
 
 # クラスター状態の確認
-uv run python ws ps
+uv run ws ps
 
 # ログ確認
-uv run python ws logs -f
+uv run ws logs -f
 ```
 
 ### 4. クラスター状態の確認
@@ -77,7 +80,7 @@ uv run python -c "import ray; ray.init('ray://localhost:10001'); print(ray.clust
 ### 5. クラスターの停止
 
 ```bash
-uv run python ws down
+uv run ws down
 ```
 
 ## ws CLI コマンド
@@ -170,7 +173,7 @@ health_service:
 
 ```bash
 # ログを確認
-uv run python ws logs ray-cpu
+uv run ws logs ray-cpu
 
 # Ray の状態を確認
 docker compose -f _build/compose.yaml exec ray-cpu ray status

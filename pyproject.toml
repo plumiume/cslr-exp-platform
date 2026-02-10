@@ -11,8 +11,14 @@ dependencies = [
     "rich>=13.0.0",
 ]
 
+[tool.setuptools]
+py-modules = ["ws"]
+
 [project.scripts]
 ws = "ws:main"
+
+[tool.uv]
+package = true
 
 [dependency-groups]
 dev = [
