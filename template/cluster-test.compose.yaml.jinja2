@@ -1,0 +1,230 @@
+# クラスターテスト用 Docker Compose 設定
+# プロジェクト名: {{ project.name }}
+# バージョン: {{ project.version }}
+
+# メインクラスターからインポート
+x-gpu: &gpu
+  deploy:
+    resources:
+      reservations:
+        devices:
+          - driver: nvidia
+            count: all
+            capabilities: [gpu]
+
+x-ray: &ray
+{% if services.ray.cpu.enabled %}
+  image: {{ services.ray.cpu.image }}
+{% elif services.ray.gpu.enabled %}
+  image: {{ services.ray.gpu.image }}
+{% endif %}
+  restart: unless-stopped
+
+services:
+  # Main cluster services
+{% if services.health.enabled %}
+  health:
+    image: python:3.12-alpine
+    container_name: {{ project.name }}-health
+    volumes:
+      - ../template/health-ep.sh:/app/health-ep.sh:ro
+    command: ["python3", "/app/health-ep.sh"]
+    ports:
+      - "{{ services.health.port }}:8080"
+    networks:
+      - ray-network
+{% endif %}
+
+{% if services.ray.cpu.enabled %}
+  ray-cpu:
+    <<: *ray
+    container_name: {{ project.name }}-ray-cpu
+    hostname: ray-cpu
+    restart: "no"
+    shm_size: '2gb'
+    environment:
+      - RAY_HEAD_PORT={{ services.ray.cpu.head_port }}
+      - RAY_DASHBOARD_PORT={{ services.ray.cpu.dashboard_port }}
+      - RAY_CLIENT_PORT={{ services.ray.cpu.client_port }}
+      - RAY_NUM_CPUS={{ services.ray.cpu.cpus }}
+    volumes:
+      - ../template/ray-ep.sh:/app/ray-ep.sh:ro
+      - ../nodes.yaml:/config/nodes.yaml:ro
+    user: root
+    entrypoint: ["/bin/bash", "-c", "apt-get update -qq && apt-get install -y -qq curl > /dev/null 2>&1 && su ray -c '/app/ray-ep.sh'"]
+{% if services.health.enabled %}
+    depends_on:
+      - health
+{% endif %}
+    deploy:
+      resources:
+        limits:
+          cpus: "{{ services.ray.cpu.cpus }}"
+          memory: {{ services.ray.cpu.memory }}
+    ports:
+      - "{{ services.ray.cpu.dashboard_port }}:{{ services.ray.cpu.dashboard_port }}"
+      - "{{ services.ray.cpu.client_port }}:{{ services.ray.cpu.client_port }}"
+      - "{{ services.ray.cpu.head_port }}:{{ services.ray.cpu.head_port }}"
+    networks:
+      - ray-network
+{% endif %}
+
+{% if host.has_gpu and services.ray.gpu.enabled %}
+  ray-gpu:
+    <<: [*ray, *gpu]
+    image: {{ services.ray.gpu.image }}
+    container_name: {{ project.name }}-ray-gpu
+    hostname: ray-gpu
+    restart: "no"
+    shm_size: '2gb'
+    environment:
+      - RAY_HEAD_PORT={{ services.ray.gpu.head_port }}
+      - RAY_DASHBOARD_PORT={{ services.ray.gpu.dashboard_port }}
+      - RAY_CLIENT_PORT={{ services.ray.gpu.client_port }}
+      - RAY_NUM_GPUS=1
+      - RAY_NUM_CPUS={{ services.ray.gpu.cpus }}
+    volumes:
+      - ../template/ray-ep.sh:/app/ray-ep.sh:ro
+      - ../nodes.yaml:/config/nodes.yaml:ro
+    user: root
+    entrypoint: ["/bin/bash", "-c", "apt-get update -qq && apt-get install -y -qq curl > /dev/null 2>&1 && su - ray -c '/app/ray-ep.sh'"]
+{% if services.health.enabled %}
+    depends_on:
+      - health
+{% endif %}
+    deploy:
+      resources:
+        limits:
+          cpus: "{{ services.ray.gpu.cpus }}"
+          memory: {{ services.ray.gpu.memory }}
+    ports:
+      - "{{ services.ray.gpu.dashboard_port }}:{{ services.ray.gpu.dashboard_port }}"
+      - "{{ services.ray.gpu.client_port }}:{{ services.ray.gpu.client_port }}"
+      - "{{ services.ray.gpu.head_port }}:{{ services.ray.gpu.head_port }}"
+    networks:
+      - ray-network
+{% endif %}
+
+  # Test containers - Network isolated
+  test-ray-client:
+    <<: *ray
+    container_name: {{ project.name }}-test-client
+    hostname: test-ray-client
+    restart: "no"
+    shm_size: '1gb'
+    extra_hosts:
+      - "ray-cpu:{{ host.ip_address }}"
+      - "ray-gpu:{{ host.ip_address }}"
+      - "health:{{ host.ip_address }}"
+    environment:
+      - RAY_HEAD_PORT={{ services.ray.cpu.head_port }}
+      - RAY_DASHBOARD_PORT={{ services.ray.cpu.dashboard_port }}
+      - RAY_CLIENT_PORT={{ services.ray.cpu.client_port }}
+      - RAY_NUM_CPUS=1
+    volumes:
+      - ../template/ray-ep.sh:/app/ray-ep.sh:ro
+      - ../nodes.yaml:/config/nodes.yaml:ro
+    user: root
+    entrypoint: ["/bin/bash", "-c"]
+    command:
+      - |
+        apt-get update -qq && apt-get install -y -qq curl iputils-ping dnsutils > /dev/null 2>&1
+        echo "=== Test Ray Client Network Test ==="
+        echo "Testing connectivity to main cluster..."
+        
+        # DNS/Network connectivity test
+        ping -c 2 ray-cpu || echo "⚠ Cannot ping ray-cpu"
+        {% if host.has_gpu and services.ray.gpu.enabled %}
+        ping -c 2 ray-gpu || echo "⚠ Cannot ping ray-gpu"
+        {% endif %}
+        ping -c 2 health || echo "⚠ Cannot ping health"
+        
+        # Port connectivity test
+        timeout 2 bash -c "</dev/tcp/ray-cpu/{{ services.ray.cpu.head_port }}" && echo "✓ ray-cpu:{{ services.ray.cpu.head_port }} reachable" || echo "✗ ray-cpu:{{ services.ray.cpu.head_port }} unreachable"
+        timeout 2 bash -c "</dev/tcp/health/8080" && echo "✓ health:8080 reachable" || echo "✗ health:8080 unreachable"
+        
+        # Ray client connection test
+        echo ""
+        echo "Testing Ray client connection..."
+        su - ray -c "python3 -c 'import ray; ray.init(\"ray://{{ host.ip_address }}:{{ services.ray.cpu.client_port }}\", ignore_reinit_error=True); print(\"✓ Ray client connected\"); print(\"Resources:\", ray.cluster_resources()); ray.shutdown()' || echo '✗ Ray client connection failed'"
+        
+        echo ""
+        echo "Test client container will sleep for debugging..."
+        tail -f /dev/null
+    depends_on:
+      - ray-cpu
+{% if services.health.enabled %}
+      - health
+{% endif %}
+    networks:
+      - test-network
+
+  test-ray-worker:
+    <<: *ray
+    container_name: {{ project.name }}-test-worker
+    hostname: test-ray-worker
+    restart: "no"
+    shm_size: '1gb'
+    extra_hosts:
+      - "ray-cpu:{{ host.ip_address }}"
+      - "ray-gpu:{{ host.ip_address }}"
+      - "health:{{ host.ip_address }}"
+    environment:
+      - RAY_HEAD_PORT={{ services.ray.cpu.head_port }}
+      - RAY_DASHBOARD_PORT={{ services.ray.cpu.dashboard_port }}
+      - RAY_CLIENT_PORT={{ services.ray.cpu.client_port }}
+      - RAY_NUM_CPUS=2
+      - HEAD_ADDRESS=ray-cpu:{{ services.ray.cpu.head_port }}
+    volumes:
+      - ../template/ray-ep.sh:/app/ray-ep.sh:ro
+      - ../nodes.yaml:/config/nodes.yaml:ro
+    user: root
+    entrypoint: ["/bin/bash", "-c"]
+    command:
+      - |
+        apt-get update -qq && apt-get install -y -qq curl iputils-ping > /dev/null 2>&1
+        echo "=== Test Ray Worker Network Test ==="
+        echo "Testing connectivity to main cluster..."
+        
+        # Network connectivity test
+        ping -c 2 ray-cpu ||  echo "⚠ Cannot ping ray-cpu"
+        timeout 2 bash -c "</dev/tcp/ray-cpu/{{ services.ray.cpu.head_port }}" && echo "✓ ray-cpu:{{ services.ray.cpu.head_port }} reachable" || echo "✗ ray-cpu:{{ services.ray.cpu.head_port }} unreachable"
+        timeout 2 bash -c "</dev/tcp/health/8080" && echo "✓ health:8080 reachable" || echo "✗ health:8080 unreachable"
+        
+        # Verify ray-ep.sh compatibility (should start as worker)
+        echo ""
+        echo "Starting Ray worker node using ray-ep.sh..."
+        echo "This node is NOT in whitelist, so should start as WORKER automatically"
+        
+        su - ray -c /app/ray-ep.sh
+    depends_on:
+      - ray-cpu
+{% if services.health.enabled %}
+      - health
+{% endif %}
+    deploy:
+      resources:
+        limits:
+          cpus: "2"
+          memory: 2g
+    networks:
+      - test-network
+
+networks:
+  ray-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: {{ network.subnet }}
+  
+  # Isolated test network
+  test-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.30.0.0/24
+
+volumes:
+  mlflow_data:
+  postgres_data:
+  ray_data:

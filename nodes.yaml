@@ -1,0 +1,31 @@
+# Ray Cluster Node Configuration
+# ノードのホワイトリストとヘルスチェック設定
+
+# Headノード候補のホワイトリスト
+# この順序で最初にヘルスチェックを通過したノードがHEADになる
+head_whitelist:
+  - ray-cpu
+  - ray-gpu
+
+# 明示的なHeadノードアドレス（ホスト名:ポート）
+# 設定されている場合、ホワイトリスト外のノードはこのアドレスに接続する
+# 未設定の場合、ホワイトリストの最初のノード + RAY_HEAD_PORT が使われる
+head_address: null
+
+# ヘルスチェックサービス設定
+health_service:
+  # ヘルスチェックエンドポイント
+  url: "http://health:8080"
+  # タイムアウト（秒）- ノード間の遅延がほとんどないため短く設定
+  timeout: 1
+  # リトライ回数
+  max_retries: 3
+  # リトライ間隔（秒）
+  retry_interval: 0.5
+
+# Rayクラスタ設定
+cluster:
+  # 既存Headノード検出のタイムアウト（秒）
+  discovery_timeout: 5
+  # Headノード不在時の待機時間（秒）
+  wait_for_head: 30

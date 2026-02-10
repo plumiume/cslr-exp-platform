@@ -1,0 +1,81 @@
+{
+  "theme": "VSCode Classic",
+  "ui": {
+    "color_scheme": "VSCode Classic"
+  },
+  "buffer_font_size": 12,
+  "buffer_font_family": "Fira Code",
+  "ui_font_size": 13,
+  "ui_font_family": "Inter",
+  "line_height": {
+    "editor": 1.6
+  },
+  "format_on_save": "on",
+  "soft_wrap": "editor_width",
+  "tab_size": 2,
+  "preferred_line_length": 88,
+  "indent_guides": {
+    "enabled": true,
+    "line_width": 1,
+    "coloring": "indent_aware"
+  },
+  "gutter": {
+    "line_numbers": true,
+    "code_actions": true,
+    "runnables": true
+  },
+  "cursor_blink": true,
+  "scroll_beyond_last_line": 3,
+  "show_whitespace": "boundary",
+  "show_wrap_guides": true,
+  "rulers": [80, 120],
+  "languages": {
+    "Python": {
+      "tab_size": 4,
+      "soft_tabs": true,
+      "prettier": {
+        "allowed": false
+      }
+    },
+    "YAML": {
+      "tab_size": 2,
+      "soft_tabs": true,
+      "format_on_save": "on"
+    },
+    "Dockerfile": {
+      "tab_size": 2,
+      "soft_tabs": true,
+      "format_on_save": "on"
+    },
+    "JSON": {
+      "tab_size": 2,
+      "soft_tabs": true,
+      "format_on_save": "on"
+    },
+    "Markdown": {
+      "tab_size": 2,
+      "soft_tabs": true,
+      "format_on_save": "off"
+    }
+  },
+  "git": {
+    "inline_blame": {
+      "enabled": false
+    }
+  },
+  "terminal": {
+    "shell": "sh",
+    "working_directory": "current_project_directory"
+  },
+  "search": {
+    "regex": false,
+    "whole_word": false,
+    "case_sensitive": false
+  },
+  "file_types": {
+    "JSON": ["*.json", "*.jsonc"],
+    "YAML": ["*.yaml", "*.yml"],
+    "Dockerfile": ["Dockerfile", "dockerfile", "Dockerfile.*"],
+    "Markdown": ["*.md", "*.markdown"]
+  }
+}

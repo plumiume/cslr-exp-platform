@@ -1,0 +1,108 @@
+# Ray クラスター設定例
+# このファイルをコピーして config.yaml として保存し、必要に応じて編集してください
+
+project:
+  name: cslr-exp-platform
+  version: 0.1.0
+
+host:
+  has_gpu: true  # GPU が利用可能な場合は true
+
+network:
+  subnet: 172.28.0.0/16
+
+volumes:
+  mlflow_data: ./data/mlflow
+  postgres_data: ./data/postgres
+  ray_data: ./data/ray
+
+services:
+  # ヘルスチェック用サービス
+  health:
+    enabled: true
+    port: 8888
+
+  # Ray クラスター設定
+  ray:
+    # CPU ヘッドノード
+    cpu:
+      enabled: true
+      image: rayproject/ray:latest
+      cpus: 4
+      memory: 8g
+      head_port: 6379
+      dashboard_port: 8265
+      client_port: 10001
+
+    # GPU ヘッドノード
+    gpu:
+      enabled: true
+      image: rayproject/ray:latest-gpu
+      cpus: 4
+      memory: 8g
+      head_port: 6380
+      dashboard_port: 8266
+      client_port: 10002
+
+    # ワーカーノード設定
+    # 複数のワーカーを定義可能
+    workers:
+      # ワーカー 1: 隔離されたネットワーク
+      - enabled: true
+        image: rayproject/ray:latest
+        cpus: 2
+        memory: 4g
+        shm_size: 2gb
+        head_address: host.docker.internal:6379  # CPU ヘッドノードに接続
+        network: ray-worker-network
+        network_subnet: 172.29.0.0/16
+
+      # ワーカー 2: 別の隔離されたネットワーク (例)
+      # GPU ヘッドノードに接続する場合
+      - enabled: false
+        image: rayproject/ray:latest
+        cpus: 2
+        memory: 4g
+        shm_size: 2gb
+        head_address: host.docker.internal:6380  # GPU ヘッドノードに接続
+        network: ray-worker-network-2
+        network_subnet: 172.30.0.0/16
+
+  # Redis サービス
+  redis:
+    enabled: true
+    image: redis:7-alpine
+    port: 6379
+
+  # MLflow サービス
+  mlflow:
+    enabled: true
+    image: ghcr.io/mlflow/mlflow:latest
+    port: 5000
+    postgres:
+      enabled: true
+      image: postgres:16-alpine
+      user: mlflow
+      password: mlflow
+      database: mlflow
+
+  # Marimo サービス
+  marimo:
+    enabled: true
+    image: marimo-labs/marimo:latest
+    port: 8080
+
+# ネットワーク構成の説明:
+# 
+# 1. ray-network (172.28.0.0/16):
+#    - Ray ヘッドノード (CPU/GPU)
+#    - Redis, MLflow, Postgres, Marimo
+#    - 内部サービスは相互にアクセス可能
+# 
+# 2. ray-worker-network-* (172.29.x.0/16):
+#    - Ray ワーカーノードは独立したネットワークに配置
+#    - ヘッドノードへは host.docker.internal 経由でアクセス
+#    - 物理ホスト間のアクセスを想定した構成
+#    - ワーカーは内部サービス (Redis, MLflow など) に直接アクセス不可
+# 
+# この構成により、マルチホスト環境での Ray クラスターをシミュレート可能

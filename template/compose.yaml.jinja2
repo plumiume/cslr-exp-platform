@@ -1,0 +1,170 @@
+# プロジェクト名: {{ project.name }}
+# バージョン: {{ project.version }}
+
+x-gpu: &gpu
+  deploy:
+    resources:
+      reservations:
+        devices:
+          - driver: nvidia
+            count: all
+            capabilities: [gpu]
+
+x-ray: &ray
+{% if services.ray.cpu.enabled %}
+  image: {{ services.ray.cpu.image }}
+{% elif services.ray.gpu.enabled %}
+  image: {{ services.ray.gpu.image }}
+{% endif %}
+  restart: unless-stopped
+  networks:
+    - ray-network
+
+services:
+{% if services.health.enabled %}
+  health:
+    image: python:3.12-alpine
+    container_name: {{ project.name }}-health
+    volumes:
+      - ../template/health-ep.sh:/app/health-ep.sh:ro
+    command: ["python3", "/app/health-ep.sh"]
+    ports:
+      - "{{ services.health.port }}:8080"
+    networks:
+      - ray-network
+{% endif %}
+
+{% if services.ray.cpu.enabled %}
+  ray-cpu:
+    <<: *ray
+    container_name: {{ project.name }}-ray-cpu
+    hostname: ray-cpu
+    restart: "no"
+    shm_size: '2gb'
+    environment:
+      - RAY_HEAD_PORT={{ services.ray.cpu.head_port }}
+      - RAY_DASHBOARD_PORT={{ services.ray.cpu.dashboard_port }}
+      - RAY_CLIENT_PORT={{ services.ray.cpu.client_port }}
+      - RAY_NUM_CPUS={{ services.ray.cpu.cpus }}
+    volumes:
+      - ../template/ray-ep.sh:/app/ray-ep.sh:ro
+      - ../nodes.yaml:/config/nodes.yaml:ro
+    user: root
+    entrypoint: ["/bin/bash", "-c", "apt-get update -qq && apt-get install -y -qq curl > /dev/null 2>&1 && su ray -c '/app/ray-ep.sh'"]
+{% if services.health.enabled %}
+    depends_on:
+      - health
+{% endif %}
+    deploy:
+      resources:
+        limits:
+          cpus: "{{ services.ray.cpu.cpus }}"
+          memory: {{ services.ray.cpu.memory }}
+    ports:
+      - "{{ services.ray.cpu.dashboard_port }}:{{ services.ray.cpu.dashboard_port }}"  # Ray Dashboard
+      - "{{ services.ray.cpu.client_port }}:{{ services.ray.cpu.client_port }}"  # Ray Client
+      - "{{ services.ray.cpu.head_port }}:{{ services.ray.cpu.head_port }}"  # Head process
+{% endif %}
+
+{% if host.has_gpu and services.ray.gpu.enabled %}
+  ray-gpu:
+    <<: [*ray, *gpu]
+    image: {{ services.ray.gpu.image }}
+    container_name: {{ project.name }}-ray-gpu
+    hostname: ray-gpu
+    restart: "no"
+    shm_size: '2gb'
+    environment:
+      - RAY_HEAD_PORT={{ services.ray.gpu.head_port }}
+      - RAY_DASHBOARD_PORT={{ services.ray.gpu.dashboard_port }}
+      - RAY_CLIENT_PORT={{ services.ray.gpu.client_port }}
+      - RAY_NUM_GPUS=1
+      - RAY_NUM_CPUS={{ services.ray.gpu.cpus }}
+    volumes:
+      - ../template/ray-ep.sh:/app/ray-ep.sh:ro
+      - ../nodes.yaml:/config/nodes.yaml:ro
+    user: root
+    entrypoint: ["/bin/bash", "-c", "apt-get update -qq && apt-get install -y -qq curl > /dev/null 2>&1 && su - ray -c '/app/ray-ep.sh'"]
+{% if services.health.enabled %}
+    depends_on:
+      - health
+{% endif %}
+    deploy:
+      resources:
+        limits:
+          cpus: "{{ services.ray.gpu.cpus }}"
+          memory: {{ services.ray.gpu.memory }}
+    ports:
+      - "{{ services.ray.gpu.dashboard_port }}:{{ services.ray.gpu.dashboard_port }}"  # Ray Dashboard
+      - "{{ services.ray.gpu.client_port }}:{{ services.ray.gpu.client_port }}"  # Ray Client
+      - "{{ services.ray.gpu.head_port }}:{{ services.ray.gpu.head_port }}"  # Head process
+{% endif %}
+
+{% if services.redis.enabled %}
+  ray-redis:
+    image: {{ services.redis.image }}
+    container_name: {{ project.name }}-redis
+    restart: unless-stopped
+    ports:
+      - "{{ services.redis.port }}:6379"
+    networks:
+      - ray-network
+{% endif %}
+
+{% if services.mlflow.enabled %}
+  mlflow:
+    image: {{ services.mlflow.image }}
+    container_name: {{ project.name }}-mlflow
+    restart: unless-stopped
+    ports:
+      - "{{ services.mlflow.port }}:5000"
+    environment:
+      - MLFLOW_BACKEND_STORE_URI=postgresql://$${POSTGRES_USER:-{{ services.mlflow.postgres.user }}}:$${POSTGRES_PASSWORD:-{{ services.mlflow.postgres.password }}}@mlflow-postgres/$${POSTGRES_DB:-{{ services.mlflow.postgres.database }}}
+      - MLFLOW_ARTIFACT_ROOT=/mlflow/artifacts
+    volumes:
+      - {{ volumes.mlflow_data }}:/mlflow/artifacts
+{% if services.mlflow.postgres.enabled %}
+    depends_on:
+      - mlflow-postgres
+{% endif %}
+    networks:
+      - ray-network
+{% endif %}
+
+{% if services.mlflow.postgres.enabled %}
+  mlflow-postgres:
+    image: {{ services.mlflow.postgres.image }}
+    container_name: {{ project.name }}-mlflow-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: $${POSTGRES_USER:-{{ services.mlflow.postgres.user }}}
+      POSTGRES_PASSWORD: $${POSTGRES_PASSWORD:-{{ services.mlflow.postgres.password }}}
+      POSTGRES_DB: $${POSTGRES_DB:-{{ services.mlflow.postgres.database }}}
+    volumes:
+      - {{ volumes.postgres_data }}:/var/lib/postgresql/data
+    networks:
+      - ray-network
+{% endif %}
+
+{% if services.marimo.enabled %}
+  marimo:
+    image: {{ services.marimo.image }}
+    container_name: {{ project.name }}-marimo
+    restart: unless-stopped
+    ports:
+      - "{{ services.marimo.port }}:8080"
+    networks:
+      - ray-network
+{% endif %}
+
+networks:
+  ray-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: {{ network.subnet }}
+
+volumes:
+  mlflow_data:
+  postgres_data:
+  ray_data:
