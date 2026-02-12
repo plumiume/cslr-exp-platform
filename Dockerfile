@@ -3,7 +3,9 @@
 # =============================================================================
 # ステージツリー:
 #   devel  ─→ ray-devel  ─→ marimo-devel   (開発・ビルド用; conda あり)
-#   runtime ─→ ray-runtime ─→ marimo-runtime (デプロイ用; env 直接コピー)
+#   runtime-base ─→ runtime (from devel)
+#                ─→ ray-runtime (from ray-devel)
+#                ─→ marimo-runtime (from marimo-devel)
 #
 # 最適化施策:
 #   A) /opt/conda/envs/py のみ直接コピー (base env/conda 本体を排除)
@@ -111,9 +113,9 @@ WORKDIR /workspace
 CMD ["conda", "run", "-n", "py", "bash"]
 
 # =====================================================================
-#  runtime : env 直接コピー (conda 本体不要 — 軽量)
+#  runtime-base : 全 runtime の共通ベース
 # =====================================================================
-FROM nvidia/cuda:${CUDA_VERSION}-cudnn-runtime-ubuntu24.04 AS runtime
+FROM nvidia/cuda:${CUDA_VERSION}-cudnn-runtime-ubuntu24.04 AS runtime-base
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PATH=/opt/conda/envs/py/bin:${PATH}
@@ -123,18 +125,22 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
+SHELL ["/bin/bash", "-c"]
+WORKDIR /workspace
+CMD ["bash"]
+
+# =====================================================================
+#  runtime : env 直接コピー (conda 本体不要 — 軽量)
+# =====================================================================
+FROM runtime-base AS runtime
+
 # 施策 A: /opt/conda/envs/py のみコピー (base env/conda 本体を排除)
 COPY --from=devel /opt/conda/envs/py /opt/conda/envs/py
-
-SHELL ["/bin/bash", "-c"]
 
 RUN echo "=== runtime Verification ===" \
     && python -c "import sys; print(f'Python={sys.version}')" \
     && python -c "import torch; print(f'torch={torch.__version__}, CUDA={torch.version.cuda}')" \
     && python -c "import torch_geometric; print(f'torch_geometric={torch_geometric.__version__}')"
-
-WORKDIR /workspace
-CMD ["bash"]
 
 # =====================================================================
 #  ray-devel : devel + Ray  (nightly wheel → ソースビルド)
@@ -184,25 +190,12 @@ CMD ["conda", "run", "-n", "py", "bash"]
 # =====================================================================
 #  ray-runtime : env 直接コピー (軽量)
 # =====================================================================
-FROM nvidia/cuda:${CUDA_VERSION}-cudnn-runtime-ubuntu24.04 AS ray-runtime
-
-ENV DEBIAN_FRONTEND=noninteractive
-ENV PATH=/opt/conda/envs/py/bin:${PATH}
-
-RUN apt-get update && apt-get install -y --no-install-recommends \
-        ca-certificates curl git \
-    && apt-get clean \
-    && rm -rf /var/lib/apt/lists/*
+FROM runtime-base AS ray-runtime
 
 COPY --from=ray-devel /opt/conda/envs/py /opt/conda/envs/py
 
-SHELL ["/bin/bash", "-c"]
-
 RUN echo "=== ray-runtime Verification ===" \
     && python -c "import ray; print(f'ray={ray.__version__}')"
-
-WORKDIR /workspace
-CMD ["bash"]
 
 # =====================================================================
 #  marimo-devel : ray-devel + Marimo
@@ -227,22 +220,9 @@ CMD ["conda", "run", "-n", "py", "bash"]
 # =====================================================================
 #  marimo-runtime : env 直接コピー (デフォルトターゲット)
 # =====================================================================
-FROM nvidia/cuda:${CUDA_VERSION}-cudnn-runtime-ubuntu24.04 AS marimo-runtime
-
-ENV DEBIAN_FRONTEND=noninteractive
-ENV PATH=/opt/conda/envs/py/bin:${PATH}
-
-RUN apt-get update && apt-get install -y --no-install-recommends \
-        ca-certificates curl git \
-    && apt-get clean \
-    && rm -rf /var/lib/apt/lists/*
+FROM runtime-base AS marimo-runtime
 
 COPY --from=marimo-devel /opt/conda/envs/py /opt/conda/envs/py
 
-SHELL ["/bin/bash", "-c"]
-
 RUN echo "=== marimo-runtime Verification ===" \
     && python -c "import marimo; print(f'marimo={marimo.__version__}')"
-
-WORKDIR /workspace
-CMD ["bash"]
