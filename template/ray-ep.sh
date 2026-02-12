@@ -6,20 +6,18 @@ set -e
 # Mode is determined by whitelist and health check
 
 # Detect environment type and set appropriate paths
-if [ -d "/opt/conda" ] && [ -n "${USE_CONDA_ENV:-}" ]; then
-    # Custom ray-runtime image (conda environment in /opt/conda)
-    export PATH="/opt/conda/bin:$PATH"
-    export CONDA_DIR="/opt/conda"
-    RAY_EXEC="conda run -n py ray"
-    PYTHON_EXEC="conda run -n py python"
-    echo "Using custom conda environment: /opt/conda/envs/py"
+if [ -d "/opt/conda/envs/py" ] && [ -n "${USE_CONDA_ENV:-}" ]; then
+    # Custom runtime image (Python environment in /opt/conda/envs/py)
+    export PATH="/opt/conda/envs/py/bin:$PATH"
+    echo "Using custom Python environment: /opt/conda/envs/py"
 else
     # Official rayproject/ray image (conda in /home/ray/anaconda3)
     export PATH="/home/ray/anaconda3/bin:$PATH"
-    RAY_EXEC="ray"
-    PYTHON_EXEC="python"
     echo "Using rayproject/ray default environment"
 fi
+
+RAY_EXEC="ray"
+PYTHON_EXEC="python"
 
 echo "Starting Ray node..."
 HOSTNAME=$(hostname)
@@ -116,11 +114,7 @@ fi
 echo "Mode: $MODE"
 
 # Build ray start command
-if [ -n "${USE_CONDA_ENV:-}" ]; then
-    RAY_CMD="conda run -n py ray start"
-else
-    RAY_CMD="ray start"
-fi
+RAY_CMD="$RAY_EXEC start"
 
 if [ "$MODE" = "head" ]; then
     RAY_CMD="$RAY_CMD --head --dashboard-host=0.0.0.0"
