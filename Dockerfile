@@ -2,13 +2,20 @@
 # PyG + Ray + Marimo  |  CUDA 13.x + Python 3.14
 # =============================================================================
 # ステージツリー:
-#   devel  ─→ ray-devel  ─→ marimo-devel   (開発・ビルド用)
-#   runtime ─→ ray-runtime ─→ marimo-runtime (デプロイ用)
+#   devel  ─→ ray-devel  ─→ marimo-devel   (開発・ビルド用; conda あり)
+#   runtime ─→ ray-runtime ─→ marimo-runtime (デプロイ用; env 直接コピー)
 #
-# devel   : nvidia/cuda CUDNN devel   + Miniforge + PyTorch + PyG (ソースビルド)
-# runtime : nvidia/cuda CUDNN runtime + conda 環境コピー (軽量)
-# ray-*   : + ray[data,train,tune,serve]
-# marimo-*: + marimo
+# 最適化施策:
+#   A) /opt/conda/envs/py のみ直接コピー (base env/conda 本体を排除)
+#   B) Docker BuildKit キャッシュマウントでビルド高速化
+#   C) 最小限のクリーンアップ（__pycache__/.pyc のみ）
+#
+# 保持するもの（runtime で torch.utils.cpp_extension 利用のため）:
+#   - torch/include, torch/share (C++/CUDA 拡張ビルドに必須)
+#   - .a (静的ライブラリ)
+#   - .so のデバッグシンボル (プロファイラ・スタックトレース用)
+#   - functorch (torch.compile 系に必要)
+#   - nvidia ヘッダー
 # =============================================================================
 
 # --- グローバル ARG (全ステージから参照可能) ---
@@ -27,10 +34,12 @@ ENV DEBIAN_FRONTEND=noninteractive
 ENV CONDA_DIR=/opt/conda
 ENV PATH=${CONDA_DIR}/bin:${PATH}
 
-# ビルドに必要なパッケージ
+# ビルドに必要なパッケージ + ccache (ビルド高速化)
+# ray-devel で必要な pkg-config/psmisc/unzip も含めて統合
 RUN apt-get update && apt-get install -y --no-install-recommends \
         wget ca-certificates git build-essential curl \
-        cmake ninja-build \
+        cmake ninja-build ccache \
+        pkg-config psmisc unzip \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
@@ -47,70 +56,77 @@ RUN conda create -n py python=${PYTHON_VERSION} -y \
 
 SHELL ["conda", "run", "-n", "py", "/bin/bash", "-c"]
 
+# ビルド最適化環境変数
+ENV CMAKE_GENERATOR=Ninja
+ENV MAX_JOBS=8
+ENV CCACHE_DIR=/tmp/ccache
+ENV CCACHE_MAXSIZE=5G
+ENV PATH=/usr/lib/ccache:${PATH}
+
 # --- PyTorch ---
-RUN pip install --no-cache-dir \
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip install --no-cache-dir \
         torch torchvision torchaudio \
-        --index-url https://download.pytorch.org/whl/${CUDA_TAG} \
-    && rm -rf ~/.cache/pip /tmp/*
+        --index-url https://download.pytorch.org/whl/${CUDA_TAG}
 
 RUN python -c "import torch; print(f'PyTorch {torch.__version__}, CUDA {torch.version.cuda}, cuDNN {torch.backends.cudnn.version()}')"
 
-# --- torch_geometric 本体 ---
-RUN pip install --no-cache-dir torch_geometric \
-    && rm -rf ~/.cache/pip /tmp/*
+# --- Ninja (PyG拡張ビルドに必須) ---
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip install --no-cache-dir ninja
 
-# --- PyG 拡張: wheel → ソースビルド ---
-RUN TORCH_VERSION=$(python -c "import torch; print(torch.__version__.split('+')[0])") \
+# --- torch_geometric 本体 ---
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip install --no-cache-dir torch_geometric
+
+# --- PyG 拡張: wheel → ソースビルド (統合版: キャッシュ効率化) ---
+RUN --mount=type=cache,target=/root/.cache/pip \
+    --mount=type=cache,target=/tmp/ccache \
+    TORCH_VERSION=$(python -c "import torch; print(torch.__version__.split('+')[0])") \
     && echo "=== [Step A] Trying wheels: torch-${TORCH_VERSION}+${CUDA_TAG} ===" \
     && pip install --no-cache-dir \
         pyg_lib torch_scatter torch_sparse torch_cluster torch_spline_conv \
         -f "https://data.pyg.org/whl/torch-${TORCH_VERSION}+${CUDA_TAG}.html" \
-    || echo "=== [Step A] Wheel install failed, will try source build ==="
-
-RUN python -c "import torch_scatter" 2>/dev/null \
-    && echo "=== torch_scatter already installed ===" \
-    || ( echo "=== [Step B] Source building scatter/sparse/cluster/spline_conv ===" \
+    || ( echo "=== [Step A] Wheel install failed, will try source build ===" \
+        && echo "=== [Step B] Source building scatter/sparse/cluster/spline_conv ===" \
         && pip install --no-cache-dir --no-build-isolation torch_scatter \
         && pip install --no-cache-dir --no-build-isolation torch_sparse \
         && pip install --no-cache-dir --no-build-isolation torch_cluster \
-        && pip install --no-cache-dir --no-build-isolation torch_spline_conv )
+        && pip install --no-cache-dir --no-build-isolation torch_spline_conv \
+        && echo "=== [Step C] Source building pyg_lib (最も時間がかかるステップ) ===" \
+        && pip install --no-cache-dir --no-build-isolation git+https://github.com/pyg-team/pyg-lib.git )
 
-RUN python -c "import pyg_lib" 2>/dev/null \
-    && echo "=== pyg_lib already installed ===" \
-    || ( echo "=== [Step C] Source building pyg_lib ===" \
-        && pip install --no-cache-dir --no-build-isolation ninja \
-        && pip install --no-cache-dir --no-build-isolation git+https://github.com/pyg-team/pyg-lib.git ) \
-    && rm -rf ~/.cache/pip /tmp/* /root/.cargo
-
-# 確認 & 最終クリーニング
+# --- devel: 最小限のクリーンアップ（プロファイラ・拡張ビルド・functorch 保持） ---
 RUN echo "=== devel Verification ===" \
     && python -c "import sys; print(f'Python={sys.version}')" \
     && python -c "import torch; print(f'torch={torch.__version__}, CUDA={torch.version.cuda}')" \
     && python -c "import torch_geometric; print(f'torch_geometric={torch_geometric.__version__}')" \
     && python -c "exec('try:\n import pyg_lib\n print(f\"pyg_lib={pyg_lib.__version__}\")\nexcept Exception:\n print(\"pyg_lib: NOT AVAILABLE\")')" \
-    && conda clean -afy \
-    && rm -rf ~/.cache /tmp/* /var/tmp/*
+    # --- 最小限のクリーンアップ: .pyc/__pycache__ のみ ---
+    && find /opt/conda/envs/py -type f -name "*.pyc" -delete \
+    && find /opt/conda/envs/py -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true \
+    && conda clean -afy
 
 WORKDIR /workspace
 CMD ["conda", "run", "-n", "py", "bash"]
 
 # =====================================================================
-#  runtime : devel から conda 環境をコピー (軽量)
+#  runtime : env 直接コピー (conda 本体不要 — 軽量)
 # =====================================================================
 FROM nvidia/cuda:${CUDA_VERSION}-cudnn-runtime-ubuntu24.04 AS runtime
 
 ENV DEBIAN_FRONTEND=noninteractive
-ENV CONDA_DIR=/opt/conda
-ENV PATH=${CONDA_DIR}/bin:${PATH}
+ENV PATH=/opt/conda/envs/py/bin:${PATH}
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
         ca-certificates curl git \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
-COPY --from=devel ${CONDA_DIR} ${CONDA_DIR}
+# 施策 A: /opt/conda/envs/py のみコピー (base env/conda 本体を排除)
+COPY --from=devel /opt/conda/envs/py /opt/conda/envs/py
 
-SHELL ["conda", "run", "-n", "py", "/bin/bash", "-c"]
+SHELL ["/bin/bash", "-c"]
 
 RUN echo "=== runtime Verification ===" \
     && python -c "import sys; print(f'Python={sys.version}')" \
@@ -118,65 +134,75 @@ RUN echo "=== runtime Verification ===" \
     && python -c "import torch_geometric; print(f'torch_geometric={torch_geometric.__version__}')"
 
 WORKDIR /workspace
-CMD ["conda", "run", "-n", "py", "bash"]
+CMD ["bash"]
 
 # =====================================================================
-#  ray-devel : devel + Ray  (nightly wheel → ソースビルド チャレンジ)
+#  ray-devel : devel + Ray  (nightly wheel → ソースビルド)
 # =====================================================================
 FROM devel AS ray-devel
 
 SHELL ["conda", "run", "-n", "py", "/bin/bash", "-c"]
 
 # Bazelisk (Ray ソースビルドに必要 — nightly が使えなかった場合)
-RUN apt-get update && apt-get install -y --no-install-recommends \
-        pkg-config psmisc unzip \
-    && apt-get clean \
-    && rm -rf /var/lib/apt/lists/* \
-    && wget -qO /usr/local/bin/bazel \
+# BuildKit キャッシュを使ってダウンロードを高速化
+RUN --mount=type=cache,target=/root/.cache/wget \
+    wget -qO /usr/local/bin/bazel \
         "https://github.com/bazelbuild/bazelisk/releases/latest/download/bazelisk-linux-amd64" \
     && chmod +x /usr/local/bin/bazel
 
 # --- Try 1: nightly wheel (高速) ---
-# --- Try 2: master ソースビルド (SUPPORTED_PYTHONS に 3.14 追加済み) ---
-RUN pip install --no-cache-dir \
-        "https://s3-us-west-2.amazonaws.com/ray-wheels/latest/ray-3.0.0.dev0-cp314-cp314-manylinux2014_x86_64.whl" \
+# --- Try 2: master ソースビルド ---
+RUN --mount=type=cache,target=/root/.cache/pip \
+    --mount=type=cache,target=/root/.cache/bazel \
+    --mount=type=cache,target=/tmp/ccache \
+    PYTHON_CP_VERSION=$(python -c "import sys; print(f'cp{sys.version_info.major}{sys.version_info.minor}')") \
+    && pip install --no-cache-dir \
+        "https://s3-us-west-2.amazonaws.com/ray-wheels/latest/ray-3.0.0.dev0-${PYTHON_CP_VERSION}-${PYTHON_CP_VERSION}-manylinux2014_x86_64.whl" \
     && echo "=== Ray nightly wheel installed ===" \
     || ( echo "=== Nightly not found – building Ray from source ===" \
         && git clone --depth 1 https://github.com/ray-project/ray.git /tmp/ray \
         && cd /tmp/ray/python \
         && pip install --no-cache-dir -r requirements.txt \
         && RAY_INSTALL_JAVA=0 pip install --no-cache-dir . --verbose \
-        && cd / && rm -rf /tmp/ray ) \
-    && rm -rf ~/.cache/pip ~/.cache/bazel /tmp/* /var/tmp/*
+        && cd / && rm -rf /tmp/ray )
 
-# Ray extras (既にインストール済みなら依存のみ追加)
-RUN pip install --no-cache-dir "ray[data,train,tune,serve]" \
-    || echo "=== Note: some Ray extras may not be resolved ===" \
-    && rm -rf ~/.cache/pip /tmp/*
+# Ray extras
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip install --no-cache-dir "ray[data,train,tune,serve]" \
+    || echo "=== Note: some Ray extras may not be resolved ==="
 
+# クリーニング（最小限）
 RUN echo "=== ray-devel Verification ===" \
     && python -c "import ray; print(f'ray={ray.__version__}')" \
-    && conda clean -afy \
-    && rm -rf ~/.cache /tmp/* /var/tmp/*
+    && find /opt/conda/envs/py -type f -name "*.pyc" -delete \
+    && find /opt/conda/envs/py -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true \
+    && conda clean -afy
 
 WORKDIR /workspace
 CMD ["conda", "run", "-n", "py", "bash"]
 
 # =====================================================================
-#  ray-runtime : runtime + Ray (ray-devel から conda コピー)
+#  ray-runtime : env 直接コピー (軽量)
 # =====================================================================
-FROM runtime AS ray-runtime
+FROM nvidia/cuda:${CUDA_VERSION}-cudnn-runtime-ubuntu24.04 AS ray-runtime
 
-# ray-devel の conda を上書きコピー (PyG + Ray を含む)
-COPY --from=ray-devel /opt/conda /opt/conda
+ENV DEBIAN_FRONTEND=noninteractive
+ENV PATH=/opt/conda/envs/py/bin:${PATH}
 
-SHELL ["conda", "run", "-n", "py", "/bin/bash", "-c"]
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        ca-certificates curl git \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY --from=ray-devel /opt/conda/envs/py /opt/conda/envs/py
+
+SHELL ["/bin/bash", "-c"]
 
 RUN echo "=== ray-runtime Verification ===" \
     && python -c "import ray; print(f'ray={ray.__version__}')"
 
 WORKDIR /workspace
-CMD ["conda", "run", "-n", "py", "bash"]
+CMD ["bash"]
 
 # =====================================================================
 #  marimo-devel : ray-devel + Marimo
@@ -185,29 +211,38 @@ FROM ray-devel AS marimo-devel
 
 SHELL ["conda", "run", "-n", "py", "/bin/bash", "-c"]
 
-RUN pip install --no-cache-dir marimo \
-    && rm -rf ~/.cache/pip /tmp/*
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip install --no-cache-dir marimo
 
+# クリーニング（最小限）
 RUN echo "=== marimo-devel Verification ===" \
     && python -c "import marimo; print(f'marimo={marimo.__version__}')" \
-    && conda clean -afy \
-    && rm -rf ~/.cache /tmp/* /var/tmp/*
+    && find /opt/conda/envs/py -type f -name "*.pyc" -delete \
+    && find /opt/conda/envs/py -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true \
+    && conda clean -afy
 
 WORKDIR /workspace
 CMD ["conda", "run", "-n", "py", "bash"]
 
 # =====================================================================
-#  marimo-runtime : ray-runtime + Marimo  (デフォルトターゲット)
+#  marimo-runtime : env 直接コピー (デフォルトターゲット)
 # =====================================================================
-FROM ray-runtime AS marimo-runtime
+FROM nvidia/cuda:${CUDA_VERSION}-cudnn-runtime-ubuntu24.04 AS marimo-runtime
 
-# marimo-devel の conda を上書きコピー (PyG + Ray + Marimo を含む)
-COPY --from=marimo-devel /opt/conda /opt/conda
+ENV DEBIAN_FRONTEND=noninteractive
+ENV PATH=/opt/conda/envs/py/bin:${PATH}
 
-SHELL ["conda", "run", "-n", "py", "/bin/bash", "-c"]
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        ca-certificates curl git \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY --from=marimo-devel /opt/conda/envs/py /opt/conda/envs/py
+
+SHELL ["/bin/bash", "-c"]
 
 RUN echo "=== marimo-runtime Verification ===" \
     && python -c "import marimo; print(f'marimo={marimo.__version__}')"
 
 WORKDIR /workspace
-CMD ["conda", "run", "-n", "py", "bash"]
+CMD ["bash"]

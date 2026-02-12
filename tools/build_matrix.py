@@ -20,25 +20,18 @@ build-matrix.yaml の設定を読み込んで、複数のDocker イメージを�
     uv run python tools/build_matrix.py --all --dry-run
 """
 
-import argparse
 import subprocess
-import sys
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+import typer
 import yaml
 from rich.console import Console
-from rich.progress import (
-    BarColumn,
-    Progress,
-    SpinnerColumn,
-    TextColumn,
-    TimeElapsedColumn,
-)
 from rich.table import Table
 
 console = Console()
+app = typer.Typer(help="Docker Build Matrix Runner")
 
 
 def load_matrix(file_path: Path) -> dict[str, Any]:
@@ -87,9 +80,7 @@ def run_build(cmd: list[str], dry_run: bool = False) -> tuple[bool, float]:
 
     start_time = datetime.now()
     try:
-        result = subprocess.run(
-            cmd, check=True, capture_output=False, text=True  # noqa: E501
-        )
+        subprocess.run(cmd, check=True, capture_output=False, text=True)  # noqa: E501
         end_time = datetime.now()
         duration = (end_time - start_time).total_seconds()
         console.print(f"[green]✓ ビルド成功[/green] (所要時間: {duration:.1f}秒)")
@@ -124,70 +115,69 @@ def filter_matrix(
     return filtered
 
 
-def main() -> int:
-    parser = argparse.ArgumentParser(description="Docker Build Matrix Runner")
-    parser.add_argument("--all", action="store_true", help="全てのビルド構成を実行")
-    parser.add_argument(
-        "--minimal", action="store_true", help="最小構成のテストビルドを実行"
-    )
-    parser.add_argument("--cuda", help="特定のCUDAバージョンのみビルド (例: 12.8.1)")
-    parser.add_argument("--python", help="特定のPythonバージョンのみビルド (例: 3.13)")
-    parser.add_argument(
-        "--target", help="特定のターゲットのみビルド (例: marimo-runtime)"
-    )
-    parser.add_argument(
-        "--dry-run", action="store_true", help="コマンドを表示するのみで実行しない"
-    )
-    parser.add_argument(
+@app.command()
+def main(
+    all: bool = typer.Option(False, "--all", help="全てのビルド構成を実行"),
+    minimal: bool = typer.Option(
+        False, "--minimal", help="最小構成のテストビルドを実行"
+    ),
+    cuda: str | None = typer.Option(
+        None, "--cuda", help="特定のCUDAバージョンのみビルド (例: 12.8.1)"
+    ),
+    python: str | None = typer.Option(
+        None, "--python", help="特定のPythonバージョンのみビルド (例: 3.13)"
+    ),
+    target: str | None = typer.Option(
+        None, "--target", help="特定のターゲットのみビルド (例: marimo-runtime)"
+    ),
+    dry_run: bool = typer.Option(
+        False, "--dry-run", help="コマンドを表示するのみで実行しない"
+    ),
+    matrix_file: Path = typer.Option(
+        Path("build-matrix.yaml"),
         "--matrix-file",
-        type=Path,
-        default=Path("build-matrix.yaml"),
         help="ビルドマトリックス設定ファイル",
-    )
-
-    args = parser.parse_args()
-
+    ),
+) -> None:
+    """Docker Build Matrix Runner"""
     # 設定ファイルを読み込み
-    if not args.matrix_file.exists():
-        console.print(
-            f"[red]エラー: {args.matrix_file} が見つかりません[/red]", file=sys.stderr
-        )
-        return 1
+    if not matrix_file.exists():
+        console.print(f"[red]エラー: {matrix_file} が見つかりません[/red]")
+        raise typer.Exit(code=1)
 
-    matrix_data = load_matrix(args.matrix_file)
+    matrix_data = load_matrix(matrix_file)
     build_options = matrix_data["build_options"]
 
     builds: list[tuple[dict[str, Any], dict[str, str]]] = []
 
     # 最小構成ビルド
-    if args.minimal:
-        minimal = matrix_data["minimal_build"]
+    if minimal:
+        minimal_config = matrix_data["minimal_build"]
         cmd = build_command(
-            cuda_version=minimal["cuda_version"],
-            python_version=minimal["python_version"],
-            cuda_tag=minimal["cuda_tag"],
-            target=minimal["target"],
-            tag=minimal["tag"],
+            cuda_version=minimal_config["cuda_version"],
+            python_version=minimal_config["python_version"],
+            cuda_tag=minimal_config["cuda_tag"],
+            target=minimal_config["target"],
+            tag=minimal_config["tag"],
             image_prefix=build_options["image_prefix"],
             platform=build_options["platform"],
         )
-        success, duration = run_build(cmd, args.dry_run)
-        return 0 if success else 1
+        success, duration = run_build(cmd, dry_run)
+        raise typer.Exit(code=0 if success else 1)
 
     # フィルタリング
-    if args.all or args.cuda or args.python or args.target:
-        builds = filter_matrix(matrix_data, args.cuda, args.python, args.target)
+    if all or cuda or python or target:
+        builds = filter_matrix(matrix_data, cuda, python, target)
     else:
         console.print("[yellow]いずれかのオプションを指定してください:[/yellow]")
         console.print("  --all : 全ビルドを実行")
         console.print("  --minimal : 最小構成のテストビルド")
         console.print("  --cuda, --python, --target : フィルタリングして実行")
-        parser.print_help()
-        return 1
+        raise typer.Exit(code=1)
 
     if not builds:
         console.print("[yellow]ビルド対象が見つかりませんでした[/yellow]")
-        return 0
+        raise typer.Exit(code=0)
 
     # ビルド一覧を表示
     table = Table(title="ビルド対象一覧")
@@ -197,13 +187,13 @@ def main() -> int:
     table.add_column("Target", style="yellow")
     table.add_column("Tag", style="magenta")
 
-    for idx, (config, target) in enumerate(builds, 1):
+    for idx, (config, target_info) in enumerate(builds, 1):
         table.add_row(
             str(idx),
             config["cuda_version"],
             config["python_version"],
-            target["name"],
-            target["tag"],
+            target_info["name"],
+            target_info["tag"],
         )
 
     console.print(table)
@@ -213,7 +203,7 @@ def main() -> int:
     results: list[tuple[str, bool, float]] = []
     total_start = datetime.now()
 
-    for idx, (config, target) in enumerate(builds, 1):
+    for idx, (config, target_info) in enumerate(builds, 1):
         console.print(
             f"\n[bold blue]===== ビルド {idx}/{len(builds)} =====[/bold blue]"
         )
@@ -221,13 +211,13 @@ def main() -> int:
             cuda_version=config["cuda_version"],
             python_version=config["python_version"],
             cuda_tag=config["cuda_tag"],
-            target=target["name"],
-            tag=target["tag"],
+            target=target_info["name"],
+            tag=target_info["tag"],
             image_prefix=build_options["image_prefix"],
             platform=build_options["platform"],
         )
-        success, duration = run_build(cmd, args.dry_run)
-        results.append((target["tag"], success, duration))
+        success, duration = run_build(cmd, dry_run)
+        results.append((target_info["tag"], success, duration))
 
     total_end = datetime.now()
     total_duration = (total_end - total_start).total_seconds()
@@ -250,8 +240,8 @@ def main() -> int:
     console.print(f"\n[bold]成功: {success_count}/{len(results)}[/bold]")
     console.print(f"[bold]総所要時間: {total_duration:.1f}秒[/bold]\n")
 
-    return 0 if success_count == len(results) else 1
+    raise typer.Exit(code=0 if success_count == len(results) else 1)
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    app()

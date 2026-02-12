@@ -105,7 +105,14 @@ def ps():
 
 
 @app.command()
-def status():
+def status(
+    all: Annotated[
+        bool,
+        typer.Option(
+            "-a", "--all", help="Show all enabled services including stopped ones"
+        ),
+    ] = False,
+):
     """Show running services with dashboard and endpoint URLs"""
     project_root = Path(__file__).parent.parent.resolve()
     manager = WorkspaceManager(project_root)
@@ -131,7 +138,7 @@ def status():
             cwd=manager.output_path.parent,
         )
 
-        if result.returncode != 0:
+        if result.returncode != 0 and not all:
             console.print(
                 "[yellow]No services are running or compose file not found[/yellow]"
             )
@@ -147,7 +154,7 @@ def status():
                     if service_info.get("State") == "running":
                         running_services.add(service_info.get("Service", ""))
 
-        if not running_services:
+        if not running_services and not all:
             console.print("[yellow]No services are currently running[/yellow]")
             console.print("Start services with: ws up -d")
             return
@@ -156,66 +163,138 @@ def status():
         host_ip = config.host.ip_address or "localhost"
 
         # Build service URLs
+        title = "All Services - URLs" if all else "Running Services - URLs"
         table = Table(
-            title="Running Services - URLs",
+            title=title,
             show_header=True,
             header_style="bold magenta",
         )
         table.add_column("Service", style="cyan", no_wrap=True)
+        if all:
+            table.add_column("Status", style="magenta")
         table.add_column("Type", style="green")
         table.add_column("URL", style="yellow")
 
         # Health service
-        if "health" in running_services and config.services.health.enabled:
-            table.add_row(
-                "health",
-                "Health Check",
-                f"http://{host_ip}:{config.services.health.port}",
-            )
+        if config.services.health.enabled:
+            is_running = "health" in running_services
+            if all or is_running:
+                row_data = ["health"]
+                if all:
+                    row_data.append(
+                        "[green]Running[/green]" if is_running else "[dim]Stopped[/dim]"
+                    )
+                row_data.extend(
+                    [
+                        "🏥 Health Check",
+                        f"http://{host_ip}:{config.services.health.port}",
+                    ]
+                )
+                table.add_row(*row_data)
 
         # Ray CPU service
-        if "ray-cpu" in running_services and config.services.ray.cpu.enabled:
-            table.add_row(
-                "ray-cpu",
-                "Dashboard",
-                f"http://{host_ip}:{config.services.ray.cpu.dashboard_port}",
-            )
-            table.add_row(
-                "ray-cpu",
-                "Client",
-                f"ray://{host_ip}:{config.services.ray.cpu.client_port}",
-            )
+        if config.services.ray.cpu.enabled:
+            is_running = "ray-cpu" in running_services
+            if all or is_running:
+                # Dashboard
+                row_data = ["ray-cpu"]
+                if all:
+                    row_data.append(
+                        "[green]Running[/green]" if is_running else "[dim]Stopped[/dim]"
+                    )
+                row_data.extend(
+                    [
+                        "📊 Dashboard",
+                        f"http://{host_ip}:{config.services.ray.cpu.dashboard_port}",
+                    ]
+                )
+                table.add_row(*row_data)
+                # Client
+                row_data = ["ray-cpu"]
+                if all:
+                    row_data.append(
+                        "[green]Running[/green]" if is_running else "[dim]Stopped[/dim]"
+                    )
+                row_data.extend(
+                    [
+                        "🔌 Client",
+                        f"ray://{host_ip}:{config.services.ray.cpu.client_port}",
+                    ]
+                )
+                table.add_row(*row_data)
 
         # Ray GPU service
-        if "ray-gpu" in running_services and config.services.ray.gpu.enabled:
-            table.add_row(
-                "ray-gpu",
-                "Dashboard",
-                f"http://{host_ip}:{config.services.ray.gpu.dashboard_port}",
-            )
-            table.add_row(
-                "ray-gpu",
-                "Client",
-                f"ray://{host_ip}:{config.services.ray.gpu.client_port}",
-            )
+        if config.services.ray.gpu.enabled:
+            is_running = "ray-gpu" in running_services
+            if all or is_running:
+                # Dashboard
+                row_data = ["ray-gpu"]
+                if all:
+                    row_data.append(
+                        "[green]Running[/green]" if is_running else "[dim]Stopped[/dim]"
+                    )
+                row_data.extend(
+                    [
+                        "📊 Dashboard",
+                        f"http://{host_ip}:{config.services.ray.gpu.dashboard_port}",
+                    ]
+                )
+                table.add_row(*row_data)
+                # Client
+                row_data = ["ray-gpu"]
+                if all:
+                    row_data.append(
+                        "[green]Running[/green]" if is_running else "[dim]Stopped[/dim]"
+                    )
+                row_data.extend(
+                    [
+                        "🔌 Client",
+                        f"ray://{host_ip}:{config.services.ray.gpu.client_port}",
+                    ]
+                )
+                table.add_row(*row_data)
 
         # MLflow service
-        if "mlflow" in running_services and config.services.mlflow.enabled:
-            table.add_row(
-                "mlflow", "UI", f"http://{host_ip}:{config.services.mlflow.port}"
-            )
+        if config.services.mlflow.enabled:
+            is_running = "mlflow" in running_services
+            if all or is_running:
+                row_data = ["mlflow"]
+                if all:
+                    row_data.append(
+                        "[green]Running[/green]" if is_running else "[dim]Stopped[/dim]"
+                    )
+                row_data.extend(
+                    ["🖥️ UI", f"http://{host_ip}:{config.services.mlflow.port}"]
+                )
+                table.add_row(*row_data)
 
         # Redis service
-        if "redis" in running_services and config.services.redis.enabled:
-            table.add_row(
-                "redis", "Server", f"redis://{host_ip}:{config.services.redis.port}"
-            )
+        if config.services.redis.enabled:
+            is_running = "ray-redis" in running_services
+            if all or is_running:
+                row_data = ["ray-redis"]
+                if all:
+                    row_data.append(
+                        "[green]Running[/green]" if is_running else "[dim]Stopped[/dim]"
+                    )
+                row_data.extend(
+                    ["🗄️ Server", f"redis://{host_ip}:{config.services.redis.port}"]
+                )
+                table.add_row(*row_data)
 
         # Marimo service
-        if "marimo" in running_services and config.services.marimo.enabled:
-            table.add_row(
-                "marimo", "Notebook", f"http://{host_ip}:{config.services.marimo.port}"
-            )
+        if config.services.marimo.enabled:
+            is_running = "marimo" in running_services
+            if all or is_running:
+                row_data = ["marimo"]
+                if all:
+                    row_data.append(
+                        "[green]Running[/green]" if is_running else "[dim]Stopped[/dim]"
+                    )
+                row_data.extend(
+                    ["📓 Notebook", f"http://{host_ip}:{config.services.marimo.port}"]
+                )
+                table.add_row(*row_data)
 
         console.print()
         console.print(table)

@@ -1,6 +1,29 @@
 # Docker Build Matrix - ビルド進捗管理
 
-最終更新: 2026-02-10
+最終更新: 2026-02-11
+
+## イメージサイズ削減の方針変更（レビュー反映）
+
+**変更理由**: runtime で torch.utils.cpp_extension を使う拡張ビルドが必要、および devel でプロファイラ・functorch/torch.compile 系を使用するため。
+
+**新しい方針**:
+- **devel**: 最小限のクリーンアップのみ（__pycache__/.pyc + conda clean）
+- **runtime**: torch.utils.cpp_extension に必要なファイルを保持
+  - torch/include, torch/share (C++/CUDA 拡張ビルドに必須)
+  - .a (静的ライブラリ)
+  - .so のデバッグシンボル (プロファイラ・スタックトレース用)
+  - functorch (torch.compile 系に必要)
+  - nvidia ヘッダー
+- **Docker BuildKit キャッシュマウント**: pip/bazel/ccache で高速化
+
+**期待される軽量化**:
+- base env / conda 本体の排除: ~200-500MB削減
+- __pycache__/.pyc の削除: ~50-100MB削減
+- 合計: 250-600MB削減（控えめな見積もり）
+
+**イメージ名**:
+- 修正前: `plumiume/cslr-exp-platform` ❌
+- 修正後: `plumiiume/cslr-exp-platform` ✅ (iが2つ)
 
 ## ビルド状況サマリー
 
