@@ -27,34 +27,28 @@ services:
 
   # Ray クラスター設定
   ray:
-    # CPU ヘッドノード
+    # 共通設定: CPU/GPU ノードの両方に適用
+    # 公式イメージを使用: image: rayproject/ray:latest
+    # カスタムイメージをビルド: image: cslr-exp-platform:ray-runtime
+    image: cslr-exp-platform:ray-runtime
+    build:
+      enabled: true
+      dockerfile: ../Dockerfile
+      target: ray-runtime
+      context: ..
+
+    # CPU ヘッドノード (固有設定のみ記述)
     cpu:
       enabled: true
-      # 公式イメージを使用: image: rayproject/ray:latest
-      # カスタムイメージをビルド: image: cslr-exp-platform:ray-runtime
-      image: cslr-exp-platform:ray-runtime
-      build:
-        enabled: true
-        dockerfile: ../Dockerfile
-        target: ray-runtime
-        context: ..
       cpus: 4
       memory: 8g
       head_port: 6379
       dashboard_port: 8265
       client_port: 20001
 
-    # GPU ヘッドノード
+    # GPU ヘッドノード (固有設定のみ記述)
     gpu:
       enabled: true
-      # 公式イメージを使用: image: rayproject/ray:latest-gpu
-      # カスタムイメージをビルド: image: cslr-exp-platform:ray-runtime
-      image: cslr-exp-platform:ray-runtime
-      build:
-        enabled: true
-        dockerfile: ../Dockerfile
-        target: ray-runtime
-        context: ..
       cpus: 4
       memory: 16g
       head_port: 6380
