@@ -64,7 +64,11 @@ services:
       - RAY_HEAD_PORT={{ services.ray.cpu.head_port }}
       - RAY_DASHBOARD_PORT={{ services.ray.cpu.dashboard_port }}
       - RAY_CLIENT_PORT={{ services.ray.cpu.client_port }}
+{% if services.ray.cpu.cpus %}
       - RAY_NUM_CPUS={{ services.ray.cpu.cpus }}
+{% else %}
+      - RAY_NUM_CPUS=4
+{% endif %}
 {% if services.ray.cpu.build and services.ray.cpu.build.enabled %}
       - USE_CONDA_ENV=1
 {% endif %}
@@ -81,11 +85,17 @@ services:
     depends_on:
       - health
 {% endif %}
+{% if services.ray.cpu.cpus or services.ray.cpu.memory %}
     deploy:
       resources:
         limits:
+{% if services.ray.cpu.cpus %}
           cpus: "{{ services.ray.cpu.cpus }}"
+{% endif %}
+{% if services.ray.cpu.memory %}
           memory: {{ services.ray.cpu.memory }}
+{% endif %}
+{% endif %}
     ports:
       - "{{ services.ray.cpu.dashboard_port }}:{{ services.ray.cpu.dashboard_port }}"  # Ray Dashboard
       - "{{ services.ray.cpu.client_port }}:{{ services.ray.cpu.client_port }}"  # Ray Client
@@ -111,7 +121,11 @@ services:
       - RAY_DASHBOARD_PORT={{ services.ray.gpu.dashboard_port }}
       - RAY_CLIENT_PORT={{ services.ray.gpu.client_port }}
       - RAY_NUM_GPUS=1
+{% if services.ray.gpu.cpus %}
       - RAY_NUM_CPUS={{ services.ray.gpu.cpus }}
+{% else %}
+      - RAY_NUM_CPUS=4
+{% endif %}
 {% if services.ray.gpu.build and services.ray.gpu.build.enabled %}
       - USE_CONDA_ENV=1
 {% endif %}
@@ -133,11 +147,22 @@ services:
       - health
 {% endif %}
 {% endif %}
+{% if services.ray.gpu.cpus or services.ray.gpu.memory %}
     deploy:
       resources:
         limits:
+{% if services.ray.gpu.cpus %}
           cpus: "{{ services.ray.gpu.cpus }}"
+{% endif %}
+{% if services.ray.gpu.memory %}
           memory: {{ services.ray.gpu.memory }}
+{% endif %}
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+{% endif %}
     ports:
       - "{{ services.ray.gpu.dashboard_port }}:{{ services.ray.gpu.dashboard_port }}"  # Ray Dashboard
       - "{{ services.ray.gpu.client_port }}:{{ services.ray.gpu.client_port }}"  # Ray Client
