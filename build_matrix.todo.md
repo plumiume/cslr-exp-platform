@@ -22,8 +22,7 @@
 - 合計: 250-600MB削減（控えめな見積もり）
 
 **イメージ名**:
-- 修正前: `plumiume/cslr-exp-platform` ❌
-- 修正後: `plumiiume/cslr-exp-platform` ✅ (iが2つ)
+- `plumiiume/cslr-exp-platform` (iが2つ)
 
 ## ビルド状況サマリー
 
