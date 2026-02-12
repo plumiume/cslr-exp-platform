@@ -40,8 +40,8 @@ services:
     # CPU ヘッドノード (固有設定のみ記述)
     cpu:
       enabled: true
-      cpus: 4
-      memory: 8g
+      # cpus: 4
+      # memory: 8g
       head_port: 6379
       dashboard_port: 8265
       client_port: 20001
@@ -49,8 +49,8 @@ services:
     # GPU ヘッドノード (固有設定のみ記述)
     gpu:
       enabled: true
-      cpus: 4
-      memory: 16g
+      # cpus: 4
+      # memory: 16g
       head_port: 6380
       dashboard_port: 8266
       client_port: 20002

@@ -64,8 +64,8 @@ class RayCPUConfig(BaseModel):
     build: Optional[BuildConfig] = Field(
         default=None, description="Docker build configuration"
     )
-    cpus: int = Field(default=4, description="CPU limit")
-    memory: str = Field(default="8g", description="Memory limit")
+    cpus: Optional[float] = Field(default=None, description="CPU limit")
+    memory: Optional[str] = Field(default=None, description="Memory limit")
     dashboard_port: int = Field(
         default=8265, description="Ray Dashboard port"
     )
@@ -92,8 +92,8 @@ class RayGPUConfig(BaseModel):
         default=None, description="Docker build configuration"
     )
     runtime: str = Field(default="nvidia", description="Container runtime")
-    cpus: int = Field(default=4, description="CPU limit")
-    memory: str = Field(default="16g", description="Memory limit")
+    cpus: Optional[float] = Field(default=None, description="CPU limit")
+    memory: Optional[str] = Field(default=None, description="Memory limit")
     dashboard_port: int = Field(
         default=8266, description="Ray Dashboard port"
     )
