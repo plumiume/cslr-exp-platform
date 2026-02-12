@@ -113,7 +113,7 @@ class RayConfig(BaseModel):
     """Ray service configuration"""
 
     image: Optional[str] = Field(
-        default="rayproject/ray:latest", description="Default Docker image"
+        default=None, description="Default Docker image"
     )
     build: Optional[BuildConfig] = Field(
         default=None, description="Default Docker build configuration"
@@ -129,6 +129,12 @@ class RayConfig(BaseModel):
                 self.cpu.image = self.image
             if self.gpu.image is None:
                 self.gpu.image = self.image
+
+        # Set defaults if still None
+        if self.cpu.image is None:
+            self.cpu.image = "rayproject/ray:latest"
+        if self.gpu.image is None:
+            self.gpu.image = "rayproject/ray:latest-gpu"
 
         # Propagate build config
         if self.build:

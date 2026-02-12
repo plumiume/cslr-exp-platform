@@ -30,7 +30,7 @@ services:
     # 共通設定: CPU/GPU ノードの両方に適用
     # 公式イメージを使用: image: rayproject/ray:latest
     # カスタムイメージをビルド: image: cslr-exp-platform:ray-runtime
-    image: cslr-exp-platform:ray-runtime
+    # image: cslr-exp-platform:ray-runtime
     build:
       enabled: true
       dockerfile: ../Dockerfile
