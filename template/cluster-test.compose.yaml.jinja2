@@ -47,11 +47,12 @@ services:
       - RAY_DASHBOARD_PORT={{ services.ray.cpu.dashboard_port }}
       - RAY_CLIENT_PORT={{ services.ray.cpu.client_port }}
       - RAY_NUM_CPUS={{ services.ray.cpu.cpus }}
+      - USE_CONDA_ENV=1
     volumes:
       - ../template/ray-ep.sh:/app/ray-ep.sh:ro
       - ../nodes.yaml:/config/nodes.yaml:ro
     user: root
-    entrypoint: ["/bin/bash", "-c", "apt-get update -qq && apt-get install -y -qq curl > /dev/null 2>&1 && su ray -c '/app/ray-ep.sh'"]
+    entrypoint: ["/bin/bash", "-c", "apt-get update -qq && apt-get install -y -qq curl > /dev/null 2>&1 && /app/ray-ep.sh"]
 {% if services.health.enabled %}
     depends_on:
       - health
@@ -83,11 +84,12 @@ services:
       - RAY_CLIENT_PORT={{ services.ray.gpu.client_port }}
       - RAY_NUM_GPUS=1
       - RAY_NUM_CPUS={{ services.ray.gpu.cpus }}
+      - USE_CONDA_ENV=1
     volumes:
       - ../template/ray-ep.sh:/app/ray-ep.sh:ro
       - ../nodes.yaml:/config/nodes.yaml:ro
     user: root
-    entrypoint: ["/bin/bash", "-c", "apt-get update -qq && apt-get install -y -qq curl > /dev/null 2>&1 && su - ray -c '/app/ray-ep.sh'"]
+    entrypoint: ["/bin/bash", "-c", "apt-get update -qq && apt-get install -y -qq curl > /dev/null 2>&1 && /app/ray-ep.sh"]
 {% if services.health.enabled %}
     depends_on:
       - health
@@ -196,7 +198,8 @@ services:
         echo "Starting Ray worker node using ray-ep.sh..."
         echo "This node is NOT in whitelist, so should start as WORKER automatically"
         
-        su - ray -c /app/ray-ep.sh
+        export USE_CONDA_ENV=1
+        /app/ray-ep.sh
     depends_on:
       - ray-cpu
 {% if services.health.enabled %}

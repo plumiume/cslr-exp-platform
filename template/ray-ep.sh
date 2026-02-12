@@ -163,6 +163,9 @@ fi
 
 # Start Ray
 echo "Executing: $RAY_CMD"
+eval $RAY_CMD
+
+# Wait for Ray to be ready
 RAY_STATUS_CMD="${RAY_EXEC} status"
 for i in {1..60}; do
     if eval $RAY_STATUS_CMD > /dev/null 2>&1; then
@@ -180,7 +183,7 @@ for i in {1..60}; do
     fi
     if [ $i -eq 60 ]; then
         echo "ERROR: Ray failed to start properly after 60 seconds"
-        ray status || true
+        eval $RAY_STATUS_CMD || true
         exit 1
     fi
     [ $((i % 10)) -eq 0 ] && echo "  Waiting... ($i/60)"
