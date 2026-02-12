@@ -113,14 +113,14 @@ fi
 
 echo "Mode: $MODE"
 
-# Build ray start command
-RAY_CMD="$RAY_EXEC start"
+# Build ray start command as array
+RAY_CMD=("$RAY_EXEC" "start")
 
 if [ "$MODE" = "head" ]; then
-    RAY_CMD="$RAY_CMD --head --dashboard-host=0.0.0.0"
-    RAY_CMD="$RAY_CMD --port=${RAY_HEAD_PORT:-6379}"
-    RAY_CMD="$RAY_CMD --dashboard-port=${RAY_DASHBOARD_PORT:-8265}"
-    RAY_CMD="$RAY_CMD --ray-client-server-port=${RAY_CLIENT_PORT:-10001}"
+    RAY_CMD+=("--head" "--dashboard-host=0.0.0.0")
+    RAY_CMD+=("--port=${RAY_HEAD_PORT:-6379}")
+    RAY_CMD+=("--dashboard-port=${RAY_DASHBOARD_PORT:-8265}")
+    RAY_CMD+=("--ray-client-server-port=${RAY_CLIENT_PORT:-10001}")
 else
     # Wait for head node to be ready
     echo "Waiting for Ray head node at $RAY_ADDRESS..."
@@ -148,36 +148,35 @@ else
         sleep 1
     done
     
-    RAY_CMD="$RAY_CMD --address=$RAY_ADDRESS"
+    RAY_CMD+=("--address=$RAY_ADDRESS")
 fi
 
 # Add resource limits
-[ -n "$RAY_NUM_CPUS" ] && RAY_CMD="$RAY_CMD --num-cpus=$RAY_NUM_CPUS"
-[ -n "$RAY_NUM_GPUS" ] && RAY_CMD="$RAY_CMD --num-gpus=$RAY_NUM_GPUS"
+[ -n "$RAY_NUM_CPUS" ] && RAY_CMD+=("--num-cpus=$RAY_NUM_CPUS")
+[ -n "$RAY_NUM_GPUS" ] && RAY_CMD+=("--num-gpus=$RAY_NUM_GPUS")
 
 # Start Ray
-echo "Executing: $RAY_CMD"
-eval $RAY_CMD
+echo "Executing: ${RAY_CMD[*]}"
+"${RAY_CMD[@]}"
 
 # Wait for Ray to be ready
-RAY_STATUS_CMD="${RAY_EXEC} status"
 for i in {1..60}; do
-    if eval $RAY_STATUS_CMD > /dev/null 2>&1; then
+    if "$RAY_EXEC" status > /dev/null 2>&1; then
         if [ "$MODE" = "head" ]; then
-            RAY_NODE_IP=$(eval $RAY_STATUS_CMD 2>&1 | grep -oP '(?<=Local node IP: )[\d.]+' || hostname -I | awk '{print $1}')
+            RAY_NODE_IP=$("$RAY_EXEC" status 2>&1 | grep -oP '(?<=Local node IP: )[\d.]+' || hostname -I | awk '{print $1}')
             echo "✓ Ray cluster is ready! Node IP: $RAY_NODE_IP"
             echo "✓ Dashboard: http://$RAY_NODE_IP:${RAY_DASHBOARD_PORT:-8265}"
             echo "✓ Connect from other hosts: ray start --address=<HOST_IP>:${RAY_HEAD_PORT:-6379}"
             [ -n "$RAY_NUM_GPUS" ] && echo "✓ GPUs available: $RAY_NUM_GPUS"
         else
             echo "✓ Ray worker successfully joined the cluster!"
-            eval $RAY_STATUS_CMD
+            "$RAY_EXEC" status
         fi
         break
     fi
     if [ $i -eq 60 ]; then
         echo "ERROR: Ray failed to start properly after 60 seconds"
-        eval $RAY_STATUS_CMD || true
+        "$RAY_EXEC" status || true
         exit 1
     fi
     [ $((i % 10)) -eq 0 ] && echo "  Waiting... ($i/60)"
