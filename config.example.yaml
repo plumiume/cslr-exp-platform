@@ -42,7 +42,7 @@ services:
       memory: 8g
       head_port: 6379
       dashboard_port: 8265
-      client_port: 10001
+      client_port: 20001
 
     # GPU ヘッドノード
     gpu:
@@ -59,7 +59,7 @@ services:
       memory: 16g
       head_port: 6380
       dashboard_port: 8266
-      client_port: 10002
+      client_port: 20002
 
   # Redis サービス
   redis:
