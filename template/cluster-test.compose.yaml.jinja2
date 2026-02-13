@@ -31,6 +31,12 @@ services:
     command: ["python3", "/app/health-ep.sh"]
     ports:
       - "0.0.0.0:{{ services.health.port }}:8080"
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080', timeout=1)"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 3s
     networks:
       - ray-network
 {% endif %}
@@ -38,6 +44,7 @@ services:
 {% if services.ray.cpu.enabled %}
   ray-cpu:
     <<: *ray
+    image: {{ services.ray.cpu.image }}
     container_name: {{ project.name }}-ray-cpu
     hostname: ray-cpu
     restart: "no"
@@ -57,10 +64,11 @@ services:
     volumes:
       - ../template/ray-ep.sh:/app/ray-ep.sh:ro
     user: root
-    entrypoint: ["/bin/bash", "-c", "apt-get update -qq && apt-get install -y -qq curl > /dev/null 2>&1 && /app/ray-ep.sh"]
+    entrypoint: ["/bin/bash", "-c", "/app/ray-ep.sh"]
 {% if services.health.enabled %}
     depends_on:
-      - health
+      health:
+        condition: service_healthy
 {% endif %}
     deploy:
       resources:
@@ -99,10 +107,11 @@ services:
     volumes:
       - ../template/ray-ep.sh:/app/ray-ep.sh:ro
     user: root
-    entrypoint: ["/bin/bash", "-c", "apt-get update -qq && apt-get install -y -qq curl > /dev/null 2>&1 && /app/ray-ep.sh"]
+    entrypoint: ["/bin/bash", "-c", "/app/ray-ep.sh"]
 {% if services.health.enabled %}
     depends_on:
-      - health
+      health:
+        condition: service_healthy
 {% endif %}
     deploy:
       resources:
