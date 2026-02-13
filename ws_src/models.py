@@ -90,6 +90,12 @@ class RayNodeConfig(BaseModel):
             return v
         if not re.match(r"^\d+[gmGM]$", v):
             raise ValueError("Memory must be format like '8g' or '512m'")
+        
+        # Extract numeric value and check if it's greater than 0
+        value = int(v[:-1])
+        if value <= 0:
+            raise ValueError("Memory value must be greater than 0")
+        
         return v.lower()
 
 
