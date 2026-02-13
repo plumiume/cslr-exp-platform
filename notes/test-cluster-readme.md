@@ -4,6 +4,14 @@
 
 cluster-test は Ray クラスタの自動構成機能（HEAD/WORKER 自動検出）を検証するための統合テスト環境です。メインクラスタとは独立したネットワーク空間でテストコンテナを起動し、`extra_hosts` を使ってホストマシン経由でメインクラスタへの接続を確認します。
 
+## 最新仕様（実装準拠）
+
+- `cluster_test.target` が `cpu` / `gpu` の接続先を決定します。
+- テスト系コンテナは `target` に応じて `services.ray.cpu.image` / `services.ray.gpu.image` を選択します（固定イメージ前提ではありません）。
+- `target=gpu` の場合のみ `test-ray-worker-cpu` が追加され、CPU側の接続検証を行います。
+- `test-network` のサブネットは固定値ではなく `cluster_test.test_network_subnet` を使います。
+- CPU/GPU の同時起動はクラスターテスト用途に限定してください。
+
 ## アーキテクチャ
 
 ```mermaid
@@ -51,7 +59,7 @@ graph TB
 
 #### 2. ray-cpu (HEAD)
 - **役割**: メインクラスタの HEAD ノード
-- **Image**: `rayproject/ray:latest`
+- **Image**: `services.ray.cpu.image`（設定値）
 - **Hostname**: `ray-cpu`
 - **Whitelist**: ✅ (`config.yaml` の `nodes.head_whitelist` に含まれる)
 - **起動モード**: HEAD
@@ -65,7 +73,7 @@ graph TB
 
 #### 3. ray-gpu (WORKER)
 - **役割**: メインクラスタの WORKER ノード
-- **Image**: `rayproject/ray:latest-gpu`
+- **Image**: `services.ray.gpu.image`（設定値）
 - **Hostname**: `ray-gpu`
 - **Whitelist**: ✅ (head_whitelist に含まれるが depends_on により起動遅延)
 - **depends_on**: `ray-cpu`, `health`
@@ -79,7 +87,8 @@ graph TB
 
 #### 4. test-ray-client
 - **目的**: Ray Client API の接続テスト
-- **Network**: test-network (172.30.0.0/24) - メインクラスタから隔離
+- **Network**: test-network (`cluster_test.test_network_subnet`) - メインクラスタから隔離
+- **Image**: `target=cpu` の場合は `services.ray.cpu.image`、`target=gpu` の場合は `services.ray.gpu.image`
 - **extra_hosts**: 
   ```yaml
   - "ray-cpu:{{ host.ip_address }}"
@@ -93,6 +102,7 @@ graph TB
 
 #### 5. test-ray-worker
 - **目的**: whitelist 外ノードの自動 WORKER 化テスト
+- **Image**: `target=cpu` の場合は `services.ray.cpu.image`、`target=gpu` の場合は `services.ray.gpu.image`
 - **Hostname**: `test-ray-worker` (`config.yaml` の `nodes.head_whitelist` に **含まれない**)
 - **環境変数**: `HEAD_ADDRESS=ray-cpu:6379` (明示的な接続先指定)
 - **extra_hosts**: ray-cpu, health をホストマシン経由で解決
@@ -105,6 +115,11 @@ graph TB
   - ✓ ホワイトリスト外ノードが自動的に WORKER になる
   - ✓ HEAD_ADDRESS 環境変数による接続先オーバーライド
   - ✓ クラスタへの参加成功（CPU リソースが増加）
+
+#### 6. test-ray-worker-cpu（target=gpu のときのみ）
+- **目的**: GPUターゲット時の CPU HEAD 接続検証
+- **Image**: `services.ray.cpu.image`
+- **環境変数**: `HEAD_ADDRESS=ray-cpu:<cpu_head_port>`
 
 ## ネットワーク分離戦略
 

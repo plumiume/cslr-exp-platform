@@ -261,7 +261,13 @@ class WorkspaceManager:
         compose_cmd = ["docker", "compose", "-f", str(self.test_output_path)]
 
         # Ensure /tmp/ray mount dirs exist (to avoid root-owned dirs)
-        for svc in ["ray-cpu", "ray-gpu", "test-client", "test-worker"]:
+        for svc in [
+            "ray-cpu",
+            "ray-gpu",
+            "test-client",
+            "test-worker",
+            "test-worker-cpu",
+        ]:
             (log_base / svc / "tmp-ray").mkdir(parents=True, exist_ok=True)
 
         # 1. Start containers
@@ -437,7 +443,13 @@ class WorkspaceManager:
             )
 
         # 6. Copy /tmp/ray volume-mounted data (logs only, skip sockets/symlinks)
-        for svc in ["ray-cpu", "ray-gpu", "test-client", "test-worker"]:
+        for svc in [
+            "ray-cpu",
+            "ray-gpu",
+            "test-client",
+            "test-worker",
+            "test-worker-cpu",
+        ]:
             src = log_base / svc / "tmp-ray"
             dst = log_dir / svc / "tmp-ray-volume"
             if src.exists() and any(src.iterdir()):

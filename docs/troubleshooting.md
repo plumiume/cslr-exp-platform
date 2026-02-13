@@ -492,7 +492,7 @@ Ray の Global Control Service (GCS) に接続できない。
 
 **解決方法**:
 
-- **ノード IP の問題**: Ray は自動的にコンテナの IP を検出します。`--node-ip-address` は指定しないでください。
+- **ノード IP の問題**: 単一ネットワークでは自動検出で動作しますが、ネットワーク分離/NAT 環境では `--node-ip-address` で到達可能な IP を指定してください。
 
 - **GCS の再起動**:
   ```bash

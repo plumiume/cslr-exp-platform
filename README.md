@@ -92,7 +92,28 @@ uv run ws down
 | `ws down [-v]` | サービスを停止 |
 | `ws ps` | 実行中のサービスを表示 |
 | `ws logs [-f] [--tail N]` | ログを表示 |
-| `ws test [--up\|--down\|--logs]` | テストコンテナの管理 |
+| `ws test [--up\|--down\|--logs\|--collect-logs] [--duration N] [--target cpu\|gpu] [--head host:port]` | テストコンテナの管理 |
+
+※ `--target` に応じて cluster-test の接続先ノード（CPU/GPU）を切り替えます。CPU/GPU の同時起動はクラスターテスト用途に限定してください。
+
+## 運用ポリシー
+
+### 1) 重要点
+
+- 通常運用では `ray-cpu` / `ray-gpu` は排他的に起動します。
+- CPU/GPU 同時起動は `ws test` によるクラスターテスト用途のみを前提とします。
+
+### 2) 実行レベル制限
+
+- スキーマ上で CPU/GPU 同時有効を禁止するのではなく、`ws up` の実行時に制限します。
+- `ws up ray-cpu ray-gpu` はエラーで停止します。
+
+### 3) future マーク方針
+
+- 以下は将来利用（future/reserved）として保持します。
+   - `host.hostname`
+   - `services.ray.cpu.address` / `services.ray.gpu.address`
+   - `volumes.ray_data`
 
 ## 設定ファイル
 
@@ -106,7 +127,7 @@ services:
     cpu:
       enabled: true
       image: rayproject/ray:latest
-      cpus: "4"
+         cpus: 4
       memory: 8g
       head_port: 6379
       dashboard_port: 8265
@@ -318,7 +339,7 @@ docker compose -f _build/compose.yaml exec ray-cpu cat /tmp/ray/session_latest/l
 
 ### 既知の問題
 
-1. **`--node-ip-address` は使用しない**: Ray は自動的にコンテナのIPを検出します
+1. **`--node-ip-address` は環境に応じて使用する**: 単一ネットワークでは自動検出で十分ですが、ネットワーク分離/NAT 環境では到達可能な IP を明示してください
 2. **GCS health check failures**: ノードIPが正しく設定されていない場合に発生
 3. **ポート衝突**: Redis(6381) と Ray head(6379/6380) のホスト側ポートが重ならないよう注意
 4. **マルチホストでのホスト名解決**: Docker の組み込み DNS は単一ホスト内のみ有効。マルチホストでは外部 DNS または `/etc/hosts` が必要

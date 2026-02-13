@@ -144,6 +144,13 @@ else
     RAY_CMD+=("--address=$RAY_ADDRESS")
 fi
 
+# Add explicit node address and fixed internal ports when configured
+[ -n "$NODE_IP_ADDRESS" ] && RAY_CMD+=("--node-ip-address=$NODE_IP_ADDRESS")
+[ -n "$NODE_MANAGER_PORT" ] && RAY_CMD+=("--node-manager-port=$NODE_MANAGER_PORT")
+[ -n "$OBJECT_MANAGER_PORT" ] && RAY_CMD+=("--object-manager-port=$OBJECT_MANAGER_PORT")
+[ -n "$MIN_WORKER_PORT" ] && RAY_CMD+=("--min-worker-port=$MIN_WORKER_PORT")
+[ -n "$MAX_WORKER_PORT" ] && RAY_CMD+=("--max-worker-port=$MAX_WORKER_PORT")
+
 # Add resource limits
 [ -n "$RAY_NUM_CPUS" ] && RAY_CMD+=("--num-cpus=$RAY_NUM_CPUS")
 [ -n "$RAY_NUM_GPUS" ] && RAY_CMD+=("--num-gpus=$RAY_NUM_GPUS")

@@ -59,6 +59,15 @@ def up(
         config = manager.load_config()
         config = manager.detect_host_state(config)
 
+        if services:
+            selected_services = set(services)
+            if {"ray-cpu", "ray-gpu"}.issubset(selected_services):
+                console.print(
+                    "[red]Error:[/red] ray-cpu と ray-gpu の同時起動は "
+                    "ws test でのみ許可されています。"
+                )
+                raise typer.Exit(1)
+
         # Select ray-gpu if GPU is available and enabled, otherwise ray-cpu
         if config.host.has_gpu and config.services.ray.gpu.enabled:
             profile = "ray-gpu"
