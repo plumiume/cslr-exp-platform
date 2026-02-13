@@ -6,7 +6,7 @@ Configuration models for workspace management.
 
 import ipaddress
 import re
-from typing import Optional, Tuple, Type
+from typing import Any, Optional, Tuple, Type
 from pydantic import BaseModel, Field, field_validator, model_validator
 from pydantic_settings import (
     BaseSettings,
@@ -135,7 +135,7 @@ class RayConfig(BaseModel):
     cpu: RayCPUConfig = Field(default_factory=RayCPUConfig)
     gpu: RayGPUConfig = Field(default_factory=RayGPUConfig)
 
-    def model_post_init(self, __context):
+    def model_post_init(self, __context: Any) -> None:
         """Propagate shared settings to CPU/GPU configs if not set"""
         # Propagate image
         if self.image:
@@ -280,7 +280,7 @@ class Config(BaseSettings):
     @model_validator(mode="after")
     def check_port_conflicts(self) -> "Config":
         """Check for port conflicts across services"""
-        ports = []
+        ports: list[tuple[str, int]] = []
 
         # Ray ports
         if self.services.ray.cpu.enabled:
@@ -315,8 +315,8 @@ class Config(BaseSettings):
             ports.append(("health", self.services.health.port))
 
         # Check for duplicates
-        seen = set()
-        duplicates = []
+        seen: set[int] = set()
+        duplicates: list[str] = []
         for name, port in ports:
             if port in seen:
                 duplicates.append(f"{name}:{port}")
