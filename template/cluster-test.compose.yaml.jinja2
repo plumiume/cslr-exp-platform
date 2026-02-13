@@ -30,7 +30,7 @@ services:
       - ../template/health-ep.sh:/app/health-ep.sh:ro
     command: ["python3", "/app/health-ep.sh"]
     ports:
-      - "{{ services.health.port }}:8080"
+      - "0.0.0.0:{{ services.health.port }}:8080"
     networks:
       - ray-network
 {% endif %}
@@ -46,11 +46,16 @@ services:
       - RAY_HEAD_PORT={{ services.ray.cpu.head_port }}
       - RAY_DASHBOARD_PORT={{ services.ray.cpu.dashboard_port }}
       - RAY_CLIENT_PORT={{ services.ray.cpu.client_port }}
+      - HEAD_WHITELIST={{ nodes.head_whitelist | join(' ') }}
+      - HEAD_ADDRESS_CFG={{ nodes.head_address or '' }}
+      - HEALTH_URL={{ nodes.health_service.url }}
+      - HEALTH_TIMEOUT={{ nodes.health_service.timeout }}
+      - DISCOVERY_TIMEOUT={{ nodes.cluster.discovery_timeout }}
+      - WAIT_FOR_HEAD={{ nodes.cluster.wait_for_head }}
       - RAY_NUM_CPUS={{ services.ray.cpu.cpus }}
       - USE_CONDA_ENV=1
     volumes:
       - ../template/ray-ep.sh:/app/ray-ep.sh:ro
-      - ../nodes.yaml:/config/nodes.yaml:ro
     user: root
     entrypoint: ["/bin/bash", "-c", "apt-get update -qq && apt-get install -y -qq curl > /dev/null 2>&1 && /app/ray-ep.sh"]
 {% if services.health.enabled %}
@@ -82,12 +87,17 @@ services:
       - RAY_HEAD_PORT={{ services.ray.gpu.head_port }}
       - RAY_DASHBOARD_PORT={{ services.ray.gpu.dashboard_port }}
       - RAY_CLIENT_PORT={{ services.ray.gpu.client_port }}
+      - HEAD_WHITELIST={{ nodes.head_whitelist | join(' ') }}
+      - HEAD_ADDRESS_CFG={{ nodes.head_address or '' }}
+      - HEALTH_URL={{ nodes.health_service.url }}
+      - HEALTH_TIMEOUT={{ nodes.health_service.timeout }}
+      - DISCOVERY_TIMEOUT={{ nodes.cluster.discovery_timeout }}
+      - WAIT_FOR_HEAD={{ nodes.cluster.wait_for_head }}
       - RAY_NUM_GPUS=1
       - RAY_NUM_CPUS={{ services.ray.gpu.cpus }}
       - USE_CONDA_ENV=1
     volumes:
       - ../template/ray-ep.sh:/app/ray-ep.sh:ro
-      - ../nodes.yaml:/config/nodes.yaml:ro
     user: root
     entrypoint: ["/bin/bash", "-c", "apt-get update -qq && apt-get install -y -qq curl > /dev/null 2>&1 && /app/ray-ep.sh"]
 {% if services.health.enabled %}
@@ -127,10 +137,15 @@ services:
       - RAY_HEAD_PORT={{ services.ray.cpu.head_port }}
       - RAY_DASHBOARD_PORT={{ services.ray.cpu.dashboard_port }}
       - RAY_CLIENT_PORT={{ services.ray.cpu.client_port }}
+      - HEAD_WHITELIST={{ nodes.head_whitelist | join(' ') }}
+      - HEAD_ADDRESS_CFG={{ nodes.head_address or '' }}
+      - HEALTH_URL={{ nodes.health_service.url }}
+      - HEALTH_TIMEOUT={{ nodes.health_service.timeout }}
+      - DISCOVERY_TIMEOUT={{ nodes.cluster.discovery_timeout }}
+      - WAIT_FOR_HEAD={{ nodes.cluster.wait_for_head }}
       - RAY_NUM_CPUS=1
     volumes:
       - ../template/ray-ep.sh:/app/ray-ep.sh:ro
-      - ../nodes.yaml:/config/nodes.yaml:ro
     user: root
     entrypoint: ["/bin/bash", "-c"]
     command:
@@ -180,11 +195,16 @@ services:
       - RAY_HEAD_PORT={{ services.ray.cpu.head_port }}
       - RAY_DASHBOARD_PORT={{ services.ray.cpu.dashboard_port }}
       - RAY_CLIENT_PORT={{ services.ray.cpu.client_port }}
+      - HEAD_WHITELIST={{ nodes.head_whitelist | join(' ') }}
+      - HEAD_ADDRESS_CFG={{ nodes.head_address or '' }}
+      - HEALTH_URL={{ nodes.health_service.url }}
+      - HEALTH_TIMEOUT={{ nodes.health_service.timeout }}
+      - DISCOVERY_TIMEOUT={{ nodes.cluster.discovery_timeout }}
+      - WAIT_FOR_HEAD={{ nodes.cluster.wait_for_head }}
       - RAY_NUM_CPUS=2
       - HEAD_ADDRESS=ray-cpu:{{ services.ray.cpu.head_port }}
     volumes:
       - ../template/ray-ep.sh:/app/ray-ep.sh:ro
-      - ../nodes.yaml:/config/nodes.yaml:ro
     user: root
     entrypoint: ["/bin/bash", "-c"]
     command:

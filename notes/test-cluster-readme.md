@@ -53,7 +53,7 @@ graph TB
 - **役割**: メインクラスタの HEAD ノード
 - **Image**: `rayproject/ray:latest`
 - **Hostname**: `ray-cpu`
-- **Whitelist**: ✅ (nodes.yaml の head_whitelist に含まれる)
+- **Whitelist**: ✅ (`config.yaml` の `nodes.head_whitelist` に含まれる)
 - **起動モード**: HEAD
   - Health service 確認 → ✓
   - 既存 HEAD 検索 → なし
@@ -93,7 +93,7 @@ graph TB
 
 #### 5. test-ray-worker
 - **目的**: whitelist 外ノードの自動 WORKER 化テスト
-- **Hostname**: `test-ray-worker` (nodes.yaml の head_whitelist に **含まれない**)
+- **Hostname**: `test-ray-worker` (`config.yaml` の `nodes.head_whitelist` に **含まれない**)
 - **環境変数**: `HEAD_ADDRESS=ray-cpu:6379` (明示的な接続先指定)
 - **extra_hosts**: ray-cpu, health をホストマシン経由で解決
 - **起動フロー**:
@@ -127,7 +127,7 @@ graph TB
 ### シナリオ 1: HEAD/WORKER 自動検出
 
 **前提条件**:
-- `nodes.yaml` の `head_whitelist`: `[ray-cpu, ray-gpu]`
+- `config.yaml` の `nodes.head_whitelist`: `[ray-cpu, ray-gpu]`
 - ray-cpu が先に起動 (depends_on なし)
 - ray-gpu が後に起動 (depends_on: ray-cpu)
 
@@ -193,10 +193,10 @@ docker logs cslr-exp-platform-test-client 2>&1 | grep "Ray client"
 
 ```bash
 # compose.yaml 生成 + クラスタ起動
-uv run python ws up
+uv run ws up
 
 # クラスタ状態確認
-uv run python ws ps
+uv run ws ps
 docker exec cslr-exp-platform-ray-cpu ray status
 ```
 
@@ -204,7 +204,7 @@ docker exec cslr-exp-platform-ray-cpu ray status
 
 ```bash
 # cluster-test.compose.yaml 生成 + テストコンテナ起動
-uv run python ws test --up
+uv run ws test --up
 
 # テストログ確認
 docker logs cslr-exp-platform-test-client 2>&1 | tail -50
@@ -218,7 +218,7 @@ docker exec cslr-exp-platform-ray-cpu ray status
 
 ```bash
 # カスタム HEAD アドレスを指定
-uv run python ws test --up --head ray-gpu:6380
+uv run ws test --up --head ray-gpu:6380
 
 # test-ray-worker が ray-gpu に接続することを確認
 docker logs cslr-exp-platform-test-worker 2>&1 | grep "HEAD_ADDRESS"
@@ -228,10 +228,10 @@ docker logs cslr-exp-platform-test-worker 2>&1 | grep "HEAD_ADDRESS"
 
 ```bash
 # テストコンテナのみ停止
-uv run python ws test --down
+uv run ws test --down
 
 # 全体停止
-uv run python ws down
+uv run ws down
 ```
 
 ## 検証項目チェックリスト
@@ -266,9 +266,9 @@ uv run python ws down
 - [ ] ray-cpu クラスタへの参加成功
 - [ ] ray status で 3 nodes に増加
 
-### ✅ CRLF 対応
-- [ ] nodes.yaml が Windows CRLF でも動作
-- [ ] ray-ep.sh の `tr -d '\r'` が機能
+### ✅ 設定注入
+- [ ] `config.yaml` の `nodes` 設定が compose 生成時に環境変数へ注入される
+- [ ] `HEAD_WHITELIST` / `HEALTH_URL` / `HEAD_ADDRESS_CFG` が期待値になる
 - [ ] Whitelist 判定が正常動作
 
 ### ✅ PATH 解決
@@ -301,9 +301,9 @@ su - ray -c "python3 -c '...'"
 
 ### "Node not in whitelist" だが実際は含まれている
 
-**原因**: nodes.yaml に Windows CRLF が含まれ、"ray-cpu\r" != "ray-cpu" となる
+**原因**: `config.yaml` の `nodes.head_whitelist` とコンテナ `hostname` が不一致
 
-**解決策**: ray-ep.sh で `tr -d '\r'` を使用（既に実装済み）
+**解決策**: `config.yaml` の `nodes.head_whitelist` と compose の `hostname` を一致させる
 
 ### ray-gpu が独立した HEAD になる
 
@@ -321,7 +321,7 @@ ray-gpu:
 
 - [`template/cluster-test.compose.yaml.jinja2`](template/cluster-test.compose.yaml.jinja2): テンプレート定義
 - [`template/ray-ep.sh`](template/ray-ep.sh): HEAD/WORKER 自動検出スクリプト
-- [`nodes.yaml`](nodes.yaml): Whitelist とヘルスチェック設定
+- [`config.yaml`](config.yaml): Whitelist とヘルスチェック設定（`nodes` セクション）
 - [`ws`](ws): CLI ツール（`test --up/--down/--head` コマンド）
 - [`README.md`](README.md): メインプロジェクトドキュメント
 

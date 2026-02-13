@@ -9,7 +9,7 @@ Ray クラスターベースの実験プラットフォーム（Docker Compose�
 ### 主な機能
 
 - **自動IP検出**: Ray ノードのIPアドレスを自動検出（手動設定不要）
-- **ホワイトリスト制御**: `nodes.yaml` でHead候補ノードを指定し、ヘルスチェックで自動選出
+- **ホワイトリスト制御**: `config.yaml` の `nodes` でHead候補ノードを指定し、ヘルスチェックで自動選出
 - **GPU対応**: NVIDIA GPU を使用した Ray クラスター構成
 - **統合サービス**: MLflow, Redis, Marimo などの統合
 - **テスト環境**: ネットワーク分離されたテストコンテナで接続性を検証
@@ -119,26 +119,39 @@ services:
       client_port: 10002
   redis:
     port: 6381  # ホスト側ポート（コンテナ内は6379）
+
+nodes:
+   head_whitelist:
+      - ray-cpu
+      - ray-gpu
+   head_address: null
+   health_service:
+      url: "http://health:8080"
+      timeout: 1
+   cluster:
+      discovery_timeout: 5
+      wait_for_head: 30
 ```
 
-### nodes.yaml
+### config.yaml の `nodes` セクション
 
 ノードのホワイトリストとヘルスチェック設定。
 
-**重要**: `head_whitelist` には、**このファイルを配置したマシンから到達可能なホスト名**を指定してください。
+**重要**: `head_whitelist` には、**この設定を適用するマシンから到達可能なホスト名**を指定してください。
 
 #### シングルホスト環境（Docker Compose単独）
 
 ```yaml
-head_whitelist:
-  - ray-cpu      # docker-composeで定義されたコンテナのホスト名
-  - ray-gpu
+nodes:
+   head_whitelist:
+      - ray-cpu      # docker-composeで定義されたコンテナのホスト名
+      - ray-gpu
 
-head_address: null
+   head_address: null
 
-health_service:
-  url: "http://health:8080"
-  timeout: 1
+   health_service:
+      url: "http://health:8080"
+      timeout: 1
 ```
 
 #### マルチホスト環境
@@ -149,18 +162,19 @@ health_service:
    - DNS または `/etc/hosts` で他のホストのホスト名を解決できるようにする
    - 例: `/etc/hosts` に `192.168.1.10 ray-cpu-host-a` を追加
 
-2. **nodes.yaml を各ホストに配置**（同じ内容を共有）
+2. **各ホストの `config.yaml` に同じ `nodes` 設定を記述**
    ```yaml
-   head_whitelist:
-     - ray-cpu-host-a    # host-a のRay CPUノード
-     - ray-gpu-host-a    # host-a のRay GPUノード
-     - ray-cpu-host-b    # host-b のRay CPUノード
-   
-   head_address: null
-   
-   health_service:
-     url: "http://health:8080"  # 各ホストのローカルヘルスチェック
-     timeout: 1
+    nodes:
+       head_whitelist:
+          - ray-cpu-host-a    # host-a のRay CPUノード
+          - ray-gpu-host-a    # host-a のRay GPUノード
+          - ray-cpu-host-b    # host-b のRay CPUノード
+
+       head_address: null
+
+       health_service:
+          url: "http://health:8080"  # 各ホストのローカルヘルスチェック
+          timeout: 1
    ```
 
 3. **docker-compose.yaml でホスト名を設定**
@@ -177,7 +191,7 @@ health_service:
 ### 判定フロー
 
 1. **ホワイトリストチェック**
-   - コンテナの `hostname` が `nodes.yaml` の `head_whitelist` に含まれるか確認
+   - コンテナの `hostname` が `config.yaml` の `nodes.head_whitelist` に含まれるか確認
    - マルチホストの場合、ネットワーク経由で到達可能なホスト名である必要がある
 
 2. **ヘルスチェックサービス接続**
@@ -199,7 +213,7 @@ health_service:
 ホワイトリスト外のノードは自動的に Worker モードで起動し、以下の優先順位で接続先を決定：
 
 1. 環境変数 `HEAD_ADDRESS` が設定されている場合、それを使用
-2. `nodes.yaml` の `head_address` が設定されている場合、それを使用
+2. `config.yaml` の `nodes.head_address` が設定されている場合、それを使用
 3. ホワイトリストの最初のノード + `RAY_HEAD_PORT` に接続
 
 マルチホスト環境では、Workerノードから Head ノードへのネットワーク到達性を確保してください。
@@ -210,7 +224,6 @@ health_service:
 .
 ├── config.example.yaml          # 設定例
 ├── config.yaml                  # 実際の設定
-├── nodes.yaml                   # ノードホワイトリスト設定
 ├── ws                           # CLI ツール（Python typer）
 ├── pyproject.toml               # Python プロジェクト設定
 ├── template/
@@ -289,7 +302,7 @@ docker compose -f _build/compose.yaml exec ray-cpu cat /tmp/ray/session_latest/l
    # コンテナ内のホスト名を確認
    docker compose -f _build/compose.yaml exec ray-cpu hostname
    
-   # nodes.yaml の head_whitelist と一致しているか確認
+   # config.yaml の nodes.head_whitelist と一致しているか確認
    ```
 
 2. **ホワイトリストの記載順序**
@@ -321,6 +334,47 @@ GPU使用時:
 - NVIDIA Docker runtime
 - NVIDIA GPU Driver
 - CUDA 11.0+
+
+## ドキュメント
+
+### 設定とリファレンス
+
+- **[Configuration Reference](docs/config-reference.md)** - `config.yaml` の全フィールド詳細
+  - サービス設定、ネットワーク、nodes セクションの完全リファレンス
+  - 環境変数オーバーライドの使い方
+  - バリデーションルールと設定例
+
+- **[CHANGELOG](CHANGELOG.md)** - 変更履歴と移行ガイド
+  - 破壊的変更の記録（nodes.yaml → config.yaml 統合）
+  - バージョン間の移行手順
+
+### アーキテクチャとデザイン
+
+- **[System Architecture](docs/architecture.md)** - システムアーキテクチャ
+  - コンポーネント構成図
+  - 設定生成フロー
+  - Ray クラスター起動シーケンス
+  - Head/Worker 自動判定ロジック
+  - ネットワークアーキテクチャ（シングル/マルチホスト）
+
+### ビルドとデプロイ
+
+- **[Build Matrix](docs/build-matrix.md)** - Docker イメージビルド
+  - 複数の CUDA/Python バージョンでのビルド方法
+  - ビルドマトリックスの使い方
+
+- **[Test Cluster](notes/test-cluster-readme.md)** - テストクラスター
+  - ネットワーク分離されたテストコンテナの詳細
+
+### トラブルシューティング
+
+- **[Troubleshooting Guide](docs/troubleshooting.md)** - 問題解決ガイド
+  - 設定とバリデーションエラー
+  - クラスター起動の問題
+  - ネットワーク接続の問題（シングル/マルチホスト）
+  - Ray クラスター固有の問題
+  - GPU関連の問題
+  - パフォーマンスとデバッグ手法
 
 ## ライセンス
 
