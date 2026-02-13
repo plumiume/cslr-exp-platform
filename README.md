@@ -83,6 +83,12 @@ uv run python -c "import ray; ray.init('ray://localhost:10001'); print(ray.clust
 uv run ws down
 ```
 
+### 6. 開発時のユニットテスト実行
+
+```bash
+uv run pytest
+```
+
 ## ws CLI コマンド
 
 | コマンド | 説明 |
