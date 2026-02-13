@@ -64,6 +64,7 @@ services:
       - USE_CONDA_ENV=1
     volumes:
       - ../template/ray-ep.sh:/app/ray-ep.sh:ro
+      - ../_build/logs/ray-cpu/tmp-ray:/tmp/ray
     user: root
     entrypoint: ["/bin/bash", "-c", "apt-get update -qq && apt-get install -y -qq curl > /dev/null 2>&1 && /app/ray-ep.sh"]
 {% if services.health.enabled %}
@@ -114,6 +115,7 @@ services:
       - USE_CONDA_ENV=1
     volumes:
       - ../template/ray-ep.sh:/app/ray-ep.sh:ro
+      - ../_build/logs/ray-gpu/tmp-ray:/tmp/ray
     user: root
     entrypoint: ["/bin/bash", "-c", "apt-get update -qq && apt-get install -y -qq curl > /dev/null 2>&1 && /app/ray-ep.sh"]
 {% if services.health.enabled %}
@@ -167,6 +169,7 @@ services:
       - RAY_NUM_CPUS=1
     volumes:
       - ../template/ray-ep.sh:/app/ray-ep.sh:ro
+      - ../_build/logs/test-client/tmp-ray:/tmp/ray
     user: root
     entrypoint: ["/bin/bash", "-c"]
     command:
@@ -222,6 +225,7 @@ services:
       - HEAD_ADDRESS={{ target_host }}:{{ target_head_port }}
     volumes:
       - ../template/ray-ep.sh:/app/ray-ep.sh:ro
+      - ../_build/logs/test-worker/tmp-ray:/tmp/ray
     user: root
     entrypoint: ["/bin/bash", "-c"]
     command:
@@ -247,11 +251,6 @@ services:
 {% if services.health.enabled %}
       - health
 {% endif %}
-    deploy:
-      resources:
-        limits:
-          cpus: "2"
-          memory: 2g
     networks:
       - test-network
 

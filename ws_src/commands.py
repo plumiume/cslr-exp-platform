@@ -412,6 +412,20 @@ def test(
     logs: Annotated[
         bool, typer.Option("--logs", help="Show test container logs")
     ] = False,
+    collect_logs: Annotated[
+        bool,
+        typer.Option(
+            "--collect-logs",
+            help="Start test, wait duration, then collect all logs",
+        ),
+    ] = False,
+    duration: Annotated[
+        int,
+        typer.Option(
+            "--duration",
+            help="Log collection duration in minutes (with --collect-logs)",
+        ),
+    ] = 10,
     head: Annotated[
         Optional[str],
         typer.Option(
@@ -440,6 +454,15 @@ def test(
             env["HEAD_ADDRESS"] = head
 
         test_cwd = manager.test_output_path.parent
+
+        if collect_logs:
+            log_dir = manager.collect_cluster_test_logs(
+                duration_minutes=duration,
+                target=target,
+                env=env,
+            )
+            console.print(f"\n[dim]Logs saved to: {log_dir}[/dim]")
+            return
 
         if down:
             cmd = [
@@ -488,6 +511,7 @@ def test(
         console.print("  --up      Start test containers")
         console.print("  --down    Stop test containers")
         console.print("  --logs    Show test container logs")
+        console.print("  --collect-logs  Start, wait --duration min, collect all logs")
 
     except Exception as e:
         console.print(f"[red]Error: {e}[/red]")

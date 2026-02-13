@@ -6,6 +6,8 @@ Workspace manager for Docker Compose operations.
 
 import socket
 import subprocess
+import time
+from datetime import datetime
 from pathlib import Path
 from typing import Optional, Literal
 
@@ -50,7 +52,8 @@ class WorkspaceManager:
         if legacy_nodes_path.exists():
             console.print(
                 "[red]Error: legacy nodes.yaml is no longer supported. "
-                "Move nodes settings into config.yaml > nodes and remove nodes.yaml.[/red]"
+                "Move nodes settings into config.yaml"
+                " > nodes and remove nodes.yaml.[/red]"
             )
             raise typer.Exit(1)
 
@@ -235,3 +238,232 @@ class WorkspaceManager:
         except KeyboardInterrupt:
             console.print("\n[yellow]Interrupted by user[/yellow]")
             return 130
+
+    def collect_cluster_test_logs(
+        self,
+        duration_minutes: int = 10,
+        target: Optional[Literal["cpu", "gpu"]] = None,
+        env: Optional[dict[str, str]] = None,
+    ) -> Path:
+        """Start cluster test, wait for duration, then collect all logs.
+
+        Collects:
+        - Docker compose logs from all services
+        - /tmp/ray contents (persisted via volume mounts)
+        - Container inspect data
+        """
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        log_base = self.project_root / "_build" / "logs"
+        log_dir = log_base / f"collect_{timestamp}"
+        log_dir.mkdir(parents=True, exist_ok=True)
+
+        test_cwd = self.test_output_path.parent
+        compose_cmd = ["docker", "compose", "-f", str(self.test_output_path)]
+
+        # Ensure /tmp/ray mount dirs exist (to avoid root-owned dirs)
+        for svc in ["ray-cpu", "ray-gpu", "test-client", "test-worker"]:
+            (log_base / svc / "tmp-ray").mkdir(parents=True, exist_ok=True)
+
+        # 1. Start containers
+        console.print(
+            f"\n[bold cyan]== Log Collection: {duration_minutes}min ==[/bold cyan]\n"
+        )
+        console.print("[bold]Phase 1:[/bold] Starting cluster test containers...")
+
+        up_cmd = compose_cmd + ["up", "-d"]
+        console.print(f"[dim]{' '.join(up_cmd)}[/dim]")
+        result = subprocess.run(up_cmd, cwd=test_cwd, env=env)
+        if result.returncode != 0:
+            console.print("[red]Failed to start containers[/red]")
+            return log_dir
+
+        start_time = time.time()
+
+        # 2. Stream logs in background while waiting
+        console.print(
+            f"\n[bold]Phase 2:[/bold] Collecting logs for {duration_minutes} minutes..."
+        )
+        console.print("[dim]Press Ctrl+C to stop early[/dim]\n")
+
+        docker_logs_file = log_dir / "docker-compose.log"
+        log_proc = subprocess.Popen(
+            compose_cmd + ["logs", "-f", "--timestamps"],
+            cwd=test_cwd,
+            env=env,
+            stdout=open(docker_logs_file, "w"),
+            stderr=subprocess.STDOUT,
+        )
+
+        try:
+            remaining = duration_minutes * 60 - (time.time() - start_time)
+            while remaining > 0:
+                mins_left = int(remaining / 60)
+                secs_left = int(remaining % 60)
+                console.print(
+                    f"\r  Remaining: {mins_left:02d}:{secs_left:02d}  ", end=""
+                )
+                wait_step = min(10, remaining)
+                time.sleep(wait_step)
+                remaining = duration_minutes * 60 - (time.time() - start_time)
+        except KeyboardInterrupt:
+            elapsed = time.time() - start_time
+            console.print(
+                f"\n[yellow]Interrupted after {elapsed:.0f}s. "
+                "Proceeding to log collection...[/yellow]"
+            )
+
+        # Stop log streaming
+        log_proc.terminate()
+        try:
+            log_proc.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            log_proc.kill()
+
+        console.print("\n\n[bold]Phase 3:[/bold] Collecting artifacts...")
+
+        # 3. Capture container states
+        ps_file = log_dir / "container-status.txt"
+        subprocess.run(
+            compose_cmd + ["ps", "-a"],
+            cwd=test_cwd,
+            env=env,
+            stdout=open(ps_file, "w"),
+            stderr=subprocess.STDOUT,
+        )
+
+        # 4. Collect per-service docker logs
+        services_result = subprocess.run(
+            compose_cmd + ["ps", "-a", "--format", "{{.Service}}"],
+            cwd=test_cwd,
+            env=env,
+            capture_output=True,
+            text=True,
+        )
+        services_list = [
+            s.strip() for s in services_result.stdout.strip().split("\n") if s.strip()
+        ]
+
+        for svc in services_list:
+            svc_log = log_dir / f"{svc}.log"
+            subprocess.run(
+                compose_cmd + ["logs", "--timestamps", svc],
+                cwd=test_cwd,
+                env=env,
+                stdout=open(svc_log, "w"),
+                stderr=subprocess.STDOUT,
+            )
+
+        # 5. Collect in-container artifacts (/tmp/ray, ray status, etc.)
+        containers_result = subprocess.run(
+            compose_cmd + ["ps", "-a", "--format", "{{.Service}}:{{.Name}}"],
+            cwd=test_cwd,
+            env=env,
+            capture_output=True,
+            text=True,
+        )
+
+        for line in containers_result.stdout.strip().split("\n"):
+            if ":" not in line:
+                continue
+            svc, container = line.strip().split(":", 1)
+            svc_dir = log_dir / svc
+            svc_dir.mkdir(parents=True, exist_ok=True)
+
+            # ray status
+            subprocess.run(
+                ["docker", "exec", container, "ray", "status"],
+                stdout=open(svc_dir / "ray-status.txt", "w"),
+                stderr=subprocess.STDOUT,
+                timeout=10,
+            )
+
+            # /tmp/ray directory listing
+            subprocess.run(
+                ["docker", "exec", container, "find", "/tmp/ray", "-type", "f"],
+                stdout=open(svc_dir / "tmp-ray-files.txt", "w"),
+                stderr=subprocess.STDOUT,
+                timeout=10,
+            )
+
+            # /tmp/ray session latest logs
+            subprocess.run(
+                [
+                    "docker",
+                    "exec",
+                    container,
+                    "bash",
+                    "-c",
+                    (
+                        "for f in $(find /tmp/ray/session_latest/logs -type f"
+                        " -name '*.log' -o -name '*.err' -o -name '*.out'"
+                        " 2>/dev/null | head -30); do"
+                        ' echo "===== $f =====";'
+                        ' tail -200 "$f";'
+                        " echo; done"
+                    ),
+                ],
+                stdout=open(svc_dir / "ray-session-logs.txt", "w"),
+                stderr=subprocess.STDOUT,
+                timeout=30,
+            )
+
+            # docker inspect
+            subprocess.run(
+                ["docker", "inspect", container],
+                stdout=open(svc_dir / "inspect.json", "w"),
+                stderr=subprocess.STDOUT,
+                timeout=10,
+            )
+
+        # 6. Copy /tmp/ray volume-mounted data (logs only, skip sockets/symlinks)
+        for svc in ["ray-cpu", "ray-gpu", "test-client", "test-worker"]:
+            src = log_base / svc / "tmp-ray"
+            dst = log_dir / svc / "tmp-ray-volume"
+            if src.exists() and any(src.iterdir()):
+                import shutil
+                import stat
+
+                def _ignore_sockets(directory: str, contents: list[str]) -> set[str]:
+                    """Ignore Unix sockets and broken symlinks"""
+                    ignored: list[str] = []
+                    for name in contents:
+                        p = Path(directory) / name
+                        try:
+                            if p.is_symlink():
+                                ignored.append(name)
+                            elif p.exists() and stat.S_ISSOCK(p.stat().st_mode):
+                                ignored.append(name)
+                        except OSError:
+                            ignored.append(name)
+                    return set(ignored)
+
+                try:
+                    shutil.copytree(
+                        src, dst, dirs_exist_ok=True, ignore=_ignore_sockets
+                    )
+                except shutil.Error:
+                    pass  # partial copy is acceptable
+
+        # Summary
+        total_files = sum(1 for _ in log_dir.rglob("*") if _.is_file())
+        total_size = sum(f.stat().st_size for f in log_dir.rglob("*") if f.is_file())
+
+        console.print(
+            Panel(
+                f"[green]✓[/green] Logs collected to: {log_dir}\n\n"
+                f"Files: {total_files}\n"
+                f"Size: {total_size / 1024:.1f} KB\n\n"
+                f"[bold]Contents:[/bold]\n"
+                f"  docker-compose.log  - All service logs (timestamped)\n"
+                f"  <service>.log       - Per-service docker logs\n"
+                f"  <service>/ray-status.txt       - ray status output\n"
+                f"  <service>/ray-session-logs.txt  - /tmp/ray/session_latest/logs\n"
+                f"  <service>/tmp-ray-volume/       - /tmp/ray persisted data\n"
+                f"  <service>/inspect.json          - docker inspect\n"
+                f"  container-status.txt             - docker compose ps",
+                title="[bold green]Log Collection Complete[/bold green]",
+                border_style="green",
+            )
+        )
+
+        return log_dir

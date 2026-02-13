@@ -295,7 +295,7 @@ class Config(BaseSettings):
     @model_validator(mode="after")
     def check_port_conflicts(self) -> "Config":
         """Check for port conflicts across services"""
-        ports = []
+        ports: list[tuple[str, int]] = []
 
         # Ray ports
         if self.services.ray.cpu.enabled:
@@ -330,8 +330,8 @@ class Config(BaseSettings):
             ports.append(("health", self.services.health.port))
 
         # Check for duplicates
-        seen = set()
-        duplicates = []
+        seen = set[int]()
+        duplicates: list[str] = []
         for name, port in ports:
             if port in seen:
                 duplicates.append(f"{name}:{port}")
@@ -345,7 +345,7 @@ class Config(BaseSettings):
     @classmethod
     def settings_customise_sources(
         cls,
-        settings_cls: Type["Config"],
+        settings_cls: Type[BaseSettings],
         init_settings: PydanticBaseSettingsSource,
         env_settings: PydanticBaseSettingsSource,
         dotenv_settings: PydanticBaseSettingsSource,
