@@ -50,7 +50,8 @@ class WorkspaceManager:
         if legacy_nodes_path.exists():
             console.print(
                 "[red]Error: legacy nodes.yaml is no longer supported. "
-                "Move nodes settings into config.yaml > nodes and remove nodes.yaml.[/red]"
+                "Move nodes settings into config.yaml"
+                " > nodes and remove nodes.yaml.[/red]"
             )
             raise typer.Exit(1)
 

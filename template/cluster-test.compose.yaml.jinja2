@@ -31,6 +31,12 @@ services:
     command: ["python3", "/app/health-ep.sh"]
     ports:
       - "0.0.0.0:{{ services.health.port }}:8080"
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080', timeout=1)"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 3s
     networks:
       - ray-network
 {% endif %}
@@ -38,6 +44,7 @@ services:
 {% if services.ray.cpu.enabled %}
   ray-cpu:
     <<: *ray
+    image: {{ services.ray.cpu.image }}
     container_name: {{ project.name }}-ray-cpu
     hostname: ray-cpu
     restart: "no"
@@ -50,6 +57,8 @@ services:
       - HEAD_ADDRESS_CFG={{ nodes.head_address or '' }}
       - HEALTH_URL={{ nodes.health_service.url }}
       - HEALTH_TIMEOUT={{ nodes.health_service.timeout }}
+      - HEALTH_MAX_RETRIES={{ nodes.health_service.max_retries }}
+      - HEALTH_RETRY_INTERVAL={{ nodes.health_service.retry_interval }}
       - DISCOVERY_TIMEOUT={{ nodes.cluster.discovery_timeout }}
       - WAIT_FOR_HEAD={{ nodes.cluster.wait_for_head }}
       - RAY_NUM_CPUS={{ services.ray.cpu.cpus }}
@@ -57,16 +66,23 @@ services:
     volumes:
       - ../template/ray-ep.sh:/app/ray-ep.sh:ro
     user: root
-    entrypoint: ["/bin/bash", "-c", "apt-get update -qq && apt-get install -y -qq curl > /dev/null 2>&1 && /app/ray-ep.sh"]
+    entrypoint: ["/bin/bash", "-c", "/app/ray-ep.sh"]
 {% if services.health.enabled %}
     depends_on:
-      - health
+      health:
+        condition: service_healthy
 {% endif %}
+{% if services.ray.cpu.cpus or services.ray.cpu.memory %}
     deploy:
       resources:
         limits:
+{% if services.ray.cpu.cpus %}
           cpus: "{{ services.ray.cpu.cpus }}"
+{% endif %}
+{% if services.ray.cpu.memory %}
           memory: {{ services.ray.cpu.memory }}
+{% endif %}
+{% endif %}
     ports:
       - "{{ services.ray.cpu.dashboard_port }}:{{ services.ray.cpu.dashboard_port }}"
       - "{{ services.ray.cpu.client_port }}:{{ services.ray.cpu.client_port }}"
@@ -91,6 +107,8 @@ services:
       - HEAD_ADDRESS_CFG={{ nodes.head_address or '' }}
       - HEALTH_URL={{ nodes.health_service.url }}
       - HEALTH_TIMEOUT={{ nodes.health_service.timeout }}
+      - HEALTH_MAX_RETRIES={{ nodes.health_service.max_retries }}
+      - HEALTH_RETRY_INTERVAL={{ nodes.health_service.retry_interval }}
       - DISCOVERY_TIMEOUT={{ nodes.cluster.discovery_timeout }}
       - WAIT_FOR_HEAD={{ nodes.cluster.wait_for_head }}
       - RAY_NUM_GPUS=1
@@ -99,10 +117,11 @@ services:
     volumes:
       - ../template/ray-ep.sh:/app/ray-ep.sh:ro
     user: root
-    entrypoint: ["/bin/bash", "-c", "apt-get update -qq && apt-get install -y -qq curl > /dev/null 2>&1 && /app/ray-ep.sh"]
+    entrypoint: ["/bin/bash", "-c", "/app/ray-ep.sh"]
 {% if services.health.enabled %}
     depends_on:
-      - health
+      health:
+        condition: service_healthy
 {% endif %}
     deploy:
       resources:
@@ -111,9 +130,15 @@ services:
             - driver: nvidia
               count: all
               capabilities: [gpu]
+{% if services.ray.gpu.cpus or services.ray.gpu.memory %}
         limits:
+{% if services.ray.gpu.cpus %}
           cpus: "{{ services.ray.gpu.cpus }}"
+{% endif %}
+{% if services.ray.gpu.memory %}
           memory: {{ services.ray.gpu.memory }}
+{% endif %}
+{% endif %}
     ports:
       - "{{ services.ray.gpu.dashboard_port }}:{{ services.ray.gpu.dashboard_port }}"
       - "{{ services.ray.gpu.client_port }}:{{ services.ray.gpu.client_port }}"
@@ -214,7 +239,7 @@ services:
         echo "Testing connectivity to main cluster..."
         
         # Network connectivity test
-        ping -c 2 ray-cpu ||  echo "⚠ Cannot ping ray-cpu"
+        ping -c 2 ray-cpu || echo "⚠ Cannot ping ray-cpu"
         timeout 2 bash -c "</dev/tcp/ray-cpu/{{ services.ray.cpu.head_port }}" && echo "✓ ray-cpu:{{ services.ray.cpu.head_port }} reachable" || echo "✗ ray-cpu:{{ services.ray.cpu.head_port }} unreachable"
         timeout 2 bash -c "</dev/tcp/health/8080" && echo "✓ health:8080 reachable" || echo "✗ health:8080 unreachable"
         
@@ -233,7 +258,6 @@ services:
     deploy:
       resources:
         limits:
-          cpus: "2"
           memory: 2g
     networks:
       - test-network
@@ -251,8 +275,3 @@ networks:
     ipam:
       config:
         - subnet: 172.30.0.0/24
-
-volumes:
-  mlflow_data:
-  postgres_data:
-  ray_data:

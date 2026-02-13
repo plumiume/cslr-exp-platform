@@ -27,6 +27,8 @@ echo "Hostname: $HOSTNAME"
 WHITELIST="${HEAD_WHITELIST:-ray-cpu ray-gpu}"
 HEALTH_URL="${HEALTH_URL:-http://health:8080}"
 HEALTH_TIMEOUT="${HEALTH_TIMEOUT:-1}"
+HEALTH_MAX_RETRIES="${HEALTH_MAX_RETRIES:-3}"
+HEALTH_RETRY_INTERVAL="${HEALTH_RETRY_INTERVAL:-0.5}"
 DISCOVERY_TIMEOUT="${DISCOVERY_TIMEOUT:-2}"
 WAIT_FOR_HEAD="${WAIT_FOR_HEAD:-60}"
 HEAD_ADDRESS_CFG="${HEAD_ADDRESS_CFG:-}"
@@ -38,6 +40,7 @@ fi
 
 echo "Head whitelist: $WHITELIST"
 echo "Health service: $HEALTH_URL (timeout: ${HEALTH_TIMEOUT}s)"
+echo "Health retries: ${HEALTH_MAX_RETRIES} (interval: ${HEALTH_RETRY_INTERVAL}s)"
 
 # Check if current node is in whitelist
 IN_WHITELIST=false
@@ -55,7 +58,20 @@ if [ "$IN_WHITELIST" = "true" ]; then
     
     # Check if health service is available
     echo "Checking health service..."
-    if timeout ${HEALTH_TIMEOUT} curl -sf "$HEALTH_URL" > /dev/null 2>&1; then
+    HEALTH_OK=false
+    attempt=1
+    while [ "$attempt" -le "$HEALTH_MAX_RETRIES" ]; do
+        if timeout "${HEALTH_TIMEOUT}" curl -sf "$HEALTH_URL" > /dev/null 2>&1; then
+            HEALTH_OK=true
+            break
+        fi
+        if [ "$attempt" -lt "$HEALTH_MAX_RETRIES" ]; then
+            sleep "$HEALTH_RETRY_INTERVAL"
+        fi
+        attempt=$((attempt + 1))
+    done
+
+    if [ "$HEALTH_OK" = "true" ]; then
         echo "✓ Health service is available"
         
         # Check if head node already exists
@@ -84,7 +100,7 @@ if [ "$IN_WHITELIST" = "true" ]; then
             echo "→ Starting as WORKER node (connecting to $RAY_ADDRESS)"
         fi
     else
-        echo "⚠ Health service unavailable - starting as HEAD node"
+        echo "⚠ Health service unavailable after ${HEALTH_MAX_RETRIES} retries - starting as HEAD node"
         MODE="head"
     fi
 else

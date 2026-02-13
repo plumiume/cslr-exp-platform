@@ -31,7 +31,6 @@ nodes:
 volumes:
   mlflow_data: ./data/mlflow
   postgres_data: ./data/postgres
-  ray_data: ./data/ray
 
 services:
   # ヘルスチェック用サービス
@@ -85,7 +84,7 @@ services:
       enabled: true
       image: postgres:16-alpine
       user: mlflow
-      password: CHANGE_ME_INVALID_PASSWORD
+      password: CHANGE_ME_INVALID_PASSWORD  # 必須: .env または環境変数で上書き
       database: mlflow
 
   # Marimo サービス

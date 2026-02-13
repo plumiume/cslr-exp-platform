@@ -6,7 +6,7 @@ Configuration models for workspace management.
 
 import ipaddress
 import re
-from typing import Optional, Tuple, Type
+from typing import Any, Optional, Tuple, Type
 from pydantic import BaseModel, Field, field_validator, model_validator
 from pydantic_settings import (
     BaseSettings,
@@ -77,10 +77,6 @@ class RayNodeConfig(BaseModel):
     dashboard_port: int = Field(ge=1024, le=65535, description="Ray Dashboard port")
     client_port: int = Field(ge=1024, le=65535, description="Ray Client port")
     head_port: int = Field(ge=1024, le=65535, description="Head Ray process port")
-    address: Optional[str] = Field(
-        default=None,
-        description=("Ray cluster address to connect to (None = start as head node)"),
-    )
 
     @field_validator("memory")
     @classmethod
@@ -90,12 +86,12 @@ class RayNodeConfig(BaseModel):
             return v
         if not re.match(r"^\d+[gmGM]$", v):
             raise ValueError("Memory must be format like '8g' or '512m'")
-        
+
         # Extract numeric value and check if it's greater than 0
         value = int(v[:-1])
         if value <= 0:
             raise ValueError("Memory value must be greater than 0")
-        
+
         return v.lower()
 
 
@@ -118,7 +114,6 @@ class RayGPUConfig(RayNodeConfig):
     """Ray GPU service configuration"""
 
     image: Optional[str] = Field(default=None, description="Docker image")
-    runtime: str = Field(default="nvidia", description="Container runtime")
     dashboard_port: int = Field(
         default=8266, ge=1024, le=65535, description="Ray Dashboard port"
     )
@@ -140,7 +135,7 @@ class RayConfig(BaseModel):
     cpu: RayCPUConfig = Field(default_factory=RayCPUConfig)
     gpu: RayGPUConfig = Field(default_factory=RayGPUConfig)
 
-    def model_post_init(self, __context):
+    def model_post_init(self, __context: Any) -> None:
         """Propagate shared settings to CPU/GPU configs if not set"""
         # Propagate image
         if self.image:
@@ -170,7 +165,11 @@ class MLflowPostgresConfig(BaseModel):
     image: str = Field(default="postgres:16-alpine")
     user: str = Field(default="mlflow")
     password: str = Field(
-        default="mlflow", description="Database password (prefer environment variable)"
+        default="CHANGE_ME_INVALID_PASSWORD",
+        description=(
+            "Database password "
+            "(must be overridden via config/.env/environment variable)"
+        ),
     )
     database: str = Field(default="mlflow")
 
@@ -225,7 +224,6 @@ class VolumesConfig(BaseModel):
 
     mlflow_data: str = Field(default="./data/mlflow")
     postgres_data: str = Field(default="./data/postgres")
-    ray_data: str = Field(default="./data/ray")
 
 
 class NodesHealthServiceConfig(BaseModel):
@@ -282,7 +280,7 @@ class Config(BaseSettings):
     @model_validator(mode="after")
     def check_port_conflicts(self) -> "Config":
         """Check for port conflicts across services"""
-        ports = []
+        ports: list[tuple[str, int]] = []
 
         # Ray ports
         if self.services.ray.cpu.enabled:
@@ -317,8 +315,8 @@ class Config(BaseSettings):
             ports.append(("health", self.services.health.port))
 
         # Check for duplicates
-        seen = set()
-        duplicates = []
+        seen: set[int] = set()
+        duplicates: list[str] = []
         for name, port in ports:
             if port in seen:
                 duplicates.append(f"{name}:{port}")
@@ -329,10 +327,33 @@ class Config(BaseSettings):
 
         return self
 
+    @model_validator(mode="after")
+    def check_mlflow_password_security(self) -> "Config":
+        """Reject insecure/default MLflow PostgreSQL password values."""
+        if not (self.services.mlflow.enabled and self.services.mlflow.postgres.enabled):
+            return self
+
+        password = (self.services.mlflow.postgres.password or "").strip()
+        insecure_values = {
+            "",
+            "mlflow",
+            "CHANGE_ME_INVALID_PASSWORD",
+            "changeme",
+            "password",
+        }
+        if password in insecure_values:
+            raise ValueError(
+                "services.mlflow.postgres.password is insecure or unset. "
+                "Set a non-default value in config.yaml or via "
+                "CSLR_SERVICES__MLFLOW__POSTGRES__PASSWORD."
+            )
+
+        return self
+
     @classmethod
     def settings_customise_sources(
         cls,
-        settings_cls: Type["Config"],
+        settings_cls: Type[BaseSettings],
         init_settings: PydanticBaseSettingsSource,
         env_settings: PydanticBaseSettingsSource,
         dotenv_settings: PydanticBaseSettingsSource,

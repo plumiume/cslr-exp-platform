@@ -154,12 +154,12 @@ mlflow:
   
   postgres:
     user: "mlflow"
-    password: "mlflow"
+    password: "${MLFLOW_DB_PASSWORD}"
     db: "mlflow"
 ```
 
-**セキュリティ推奨**:
-機密情報（パスワードなど）は `.env` ファイルで管理してください:
+**セキュリティ要件**:
+`services.mlflow.postgres.password` はデフォルト値/空文字を禁止しています。機密情報（パスワードなど）は `.env` ファイルや環境変数で必ず注入してください:
 
 ```bash
 # .env
