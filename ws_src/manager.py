@@ -369,6 +369,27 @@ class WorkspaceManager:
             svc_dir = log_dir / svc
             svc_dir.mkdir(parents=True, exist_ok=True)
 
+            is_ray_service = svc.startswith("ray-") or svc.startswith("test-ray-")
+
+            if not is_ray_service:
+                (svc_dir / "ray-status.txt").write_text(
+                    "N/A: non-Ray service\n", encoding="utf-8"
+                )
+                (svc_dir / "tmp-ray-files.txt").write_text(
+                    "N/A: non-Ray service\n", encoding="utf-8"
+                )
+                (svc_dir / "ray-session-logs.txt").write_text(
+                    "N/A: non-Ray service\n", encoding="utf-8"
+                )
+
+                subprocess.run(
+                    ["docker", "inspect", container],
+                    stdout=open(svc_dir / "inspect.json", "w"),
+                    stderr=subprocess.STDOUT,
+                    timeout=10,
+                )
+                continue
+
             # ray status
             subprocess.run(
                 ["docker", "exec", container, "ray", "status"],

@@ -180,16 +180,20 @@ services:
         
         # DNS/Network connectivity test
         ping -c 2 {{ target_host }} || echo "⚠ Cannot ping {{ target_host }}"
+      {% if services.health.enabled %}
         ping -c 2 health || echo "⚠ Cannot ping health"
+      {% endif %}
         
         # Port connectivity test
         timeout 2 bash -c "</dev/tcp/{{ target_host }}/{{ target_head_port }}" && echo "✓ {{ target_host }}:{{ target_head_port }} reachable" || echo "✗ {{ target_host }}:{{ target_head_port }} unreachable"
-        timeout 2 bash -c "</dev/tcp/health/8080" && echo "✓ health:8080 reachable" || echo "✗ health:8080 unreachable"
+        {% if services.health.enabled %}
+          timeout 2 bash -c "</dev/tcp/health/{{ services.health.port }}" && echo "✓ health:{{ services.health.port }} reachable" || echo "✗ health:{{ services.health.port }} unreachable"
+        {% endif %}
         
         # Ray client connection test
         echo ""
         echo "Testing Ray client connection..."
-        su - ray -c "python3 -c 'import ray; ray.init(\"ray://{{ host.ip_address }}:{{ target_client_port }}\", ignore_reinit_error=True); print(\"✓ Ray client connected\"); print(\"Resources:\", ray.cluster_resources()); ray.shutdown()' || echo '✗ Ray client connection failed'"
+        su - ray -c "/home/ray/anaconda3/bin/python -c 'import ray; ray.init(\"ray://{{ host.ip_address }}:{{ target_client_port }}\", ignore_reinit_error=True); print(\"✓ Ray client connected\"); print(\"Resources:\", ray.cluster_resources()); ray.shutdown()' || echo '✗ Ray client connection failed'"
         
         echo ""
         echo "Test client container will sleep for debugging..."
@@ -237,7 +241,9 @@ services:
         # Network connectivity test
         ping -c 2 {{ target_host }} ||  echo "⚠ Cannot ping {{ target_host }}"
         timeout 2 bash -c "</dev/tcp/{{ target_host }}/{{ target_head_port }}" && echo "✓ {{ target_host }}:{{ target_head_port }} reachable" || echo "✗ {{ target_host }}:{{ target_head_port }} unreachable"
-        timeout 2 bash -c "</dev/tcp/health/8080" && echo "✓ health:8080 reachable" || echo "✗ health:8080 unreachable"
+        {% if services.health.enabled %}
+          timeout 2 bash -c "</dev/tcp/health/{{ services.health.port }}" && echo "✓ health:{{ services.health.port }} reachable" || echo "✗ health:{{ services.health.port }} unreachable"
+        {% endif %}
         
         # Verify ray-ep.sh compatibility (should start as worker)
         echo ""
