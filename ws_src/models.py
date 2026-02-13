@@ -165,7 +165,11 @@ class MLflowPostgresConfig(BaseModel):
     image: str = Field(default="postgres:16-alpine")
     user: str = Field(default="mlflow")
     password: str = Field(
-        default="mlflow", description="Database password (prefer environment variable)"
+        default="CHANGE_ME_INVALID_PASSWORD",
+        description=(
+            "Database password "
+            "(must be overridden via config/.env/environment variable)"
+        ),
     )
     database: str = Field(default="mlflow")
 
@@ -320,6 +324,29 @@ class Config(BaseSettings):
 
         if duplicates:
             raise ValueError(f"Port conflicts detected: {', '.join(duplicates)}")
+
+        return self
+
+    @model_validator(mode="after")
+    def check_mlflow_password_security(self) -> "Config":
+        """Reject insecure/default MLflow PostgreSQL password values."""
+        if not (self.services.mlflow.enabled and self.services.mlflow.postgres.enabled):
+            return self
+
+        password = (self.services.mlflow.postgres.password or "").strip()
+        insecure_values = {
+            "",
+            "mlflow",
+            "CHANGE_ME_INVALID_PASSWORD",
+            "changeme",
+            "password",
+        }
+        if password in insecure_values:
+            raise ValueError(
+                "services.mlflow.postgres.password is insecure or unset. "
+                "Set a non-default value in config.yaml or via "
+                "CSLR_SERVICES__MLFLOW__POSTGRES__PASSWORD."
+            )
 
         return self
 
