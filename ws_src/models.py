@@ -88,8 +88,12 @@ class RayNodeConfig(BaseModel):
         """Validate memory format (e.g., '8g', '16G', '512m')"""
         if v is None:
             return v
-        if not re.match(r"^[1-9]\d*[gmGM]$", v):
+        if not re.match(r"^\d+[gmGM]$", v):
             raise ValueError("Memory must be format like '8g' or '512m'")
+
+        value = int(v[:-1])
+        if value <= 0:
+            raise ValueError("Memory value must be greater than 0")
         return v.lower()
 
 

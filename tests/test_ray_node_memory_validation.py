@@ -8,6 +8,7 @@ from ws_src.models import RayCPUConfig
     ("memory", "expected"),
     [
         ("8g", "8g"),
+        ("01g", "01g"),
         ("16G", "16g"),
         ("512m", "512m"),
     ],
