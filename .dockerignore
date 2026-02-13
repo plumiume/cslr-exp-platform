@@ -43,7 +43,6 @@ CLAUDE.md
 
 # Config (実際のconfig.yamlは含めない、example.yamlのみ)
 config.yaml
-nodes.yaml
 
 # Lock files
 uv.lock

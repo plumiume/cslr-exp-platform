@@ -15,6 +15,7 @@ from rich.console import Console
 from rich.table import Table
 
 from .manager import WorkspaceManager
+from .schema_utils import generate_config_schema
 
 console = Console()
 app = typer.Typer(
@@ -22,6 +23,8 @@ app = typer.Typer(
     help="Workspace CLI for managing Docker Compose services",
     add_completion=False,
 )
+schema_app = typer.Typer(help="Schema utilities")
+app.add_typer(schema_app, name="schema")
 
 
 # ============================================================================
@@ -110,6 +113,49 @@ def generate():
     manager = WorkspaceManager(project_root)
     try:
         manager.generate_compose_file()
+    except Exception as e:
+        console.print(f"[red]Error: {e}[/red]")
+        raise typer.Exit(1)
+
+
+@app.command()
+def init(
+    force: Annotated[
+        bool,
+        typer.Option(
+            "--force",
+            help="Overwrite config.yaml if it already exists",
+        ),
+    ] = False,
+):
+    """Initialize config.yaml and generate editor schema"""
+    project_root = Path(__file__).parent.parent.resolve()
+    config_example_path = project_root / "config.example.yaml"
+    config_path = project_root / "config.yaml"
+
+    if not config_example_path.exists():
+        console.print(f"[red]Error: {config_example_path} not found[/red]")
+        raise typer.Exit(1)
+
+    if not config_path.exists() or force:
+        config_path.write_text(config_example_path.read_text(encoding="utf-8"))
+        console.print(f"[green]✓[/green] Created {config_path}")
+    else:
+        console.print(
+            "[yellow]config.yaml already exists. Use --force to overwrite.[/yellow]"
+        )
+
+    schema_path = generate_config_schema(project_root)
+    console.print(f"[green]✓[/green] Generated {schema_path}")
+
+
+@schema_app.command("generate")
+def schema_generate():
+    """Generate editor schema from Pydantic models"""
+    project_root = Path(__file__).parent.parent.resolve()
+    try:
+        schema_path = generate_config_schema(project_root)
+        console.print(f"[green]✓[/green] Generated {schema_path}")
     except Exception as e:
         console.print(f"[red]Error: {e}[/red]")
         raise typer.Exit(1)

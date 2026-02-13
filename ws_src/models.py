@@ -4,8 +4,15 @@
 Configuration models for workspace management.
 """
 
-from typing import Literal, Optional
-from pydantic import BaseModel, Field
+import ipaddress
+import re
+from typing import Literal, Optional, Tuple, Type
+from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic_settings import (
+    BaseSettings,
+    SettingsConfigDict,
+    PydanticBaseSettingsSource,
+)
 
 # ============================================================================
 # Pydantic Models for Configuration
@@ -35,6 +42,16 @@ class NetworkConfig(BaseModel):
 
     subnet: str = Field(default="172.28.0.0/16", description="Docker network subnet")
 
+    @field_validator("subnet")
+    @classmethod
+    def validate_subnet(cls, v: str) -> str:
+        """Validate CIDR notation"""
+        try:
+            ipaddress.ip_network(v)
+        except ValueError as e:
+            raise ValueError(f"Invalid subnet CIDR: {e}")
+        return v
+
 
 class BuildConfig(BaseModel):
     """Docker build configuration"""
@@ -45,42 +62,65 @@ class BuildConfig(BaseModel):
     context: str = Field(default=".", description="Build context path")
 
 
-class RayCPUConfig(BaseModel):
+class RayNodeConfig(BaseModel):
+    """Base Ray node configuration"""
+
+    enabled: bool = Field(default=True, description="Enable Ray service")
+    image: Optional[str] = Field(default=None, description="Docker image")
+    build: Optional[BuildConfig] = Field(
+        default=None, description="Docker build configuration"
+    )
+    cpus: Optional[float] = Field(default=None, gt=0, description="CPU limit")
+    memory: Optional[str] = Field(
+        default=None, description="Memory limit (e.g., '8g', '512m')"
+    )
+    dashboard_port: int = Field(ge=1024, le=65535, description="Ray Dashboard port")
+    client_port: int = Field(ge=1024, le=65535, description="Ray Client port")
+    head_port: int = Field(ge=1024, le=65535, description="Head Ray process port")
+    address: Optional[str] = Field(
+        default=None,
+        description=("Ray cluster address to connect to (None = start as head node)"),
+    )
+
+    @field_validator("memory")
+    @classmethod
+    def validate_memory(cls, v: Optional[str]) -> Optional[str]:
+        """Validate memory format (e.g., '8g', '16G', '512m')"""
+        if v is None:
+            return v
+        if not re.match(r"^\d+[gmGM]$", v):
+            raise ValueError("Memory must be format like '8g' or '512m'")
+        return v.lower()
+
+
+class RayCPUConfig(RayNodeConfig):
     """Ray CPU service configuration"""
 
-    enabled: bool = Field(default=True, description="Enable Ray CPU service")
     image: Optional[str] = Field(default=None, description="Docker image")
-    build: Optional[BuildConfig] = Field(
-        default=None, description="Docker build configuration"
+    dashboard_port: int = Field(
+        default=8265, ge=1024, le=65535, description="Ray Dashboard port"
     )
-    cpus: Optional[float] = Field(default=None, description="CPU limit")
-    memory: Optional[str] = Field(default=None, description="Memory limit")
-    dashboard_port: int = Field(default=8265, description="Ray Dashboard port")
-    client_port: int = Field(default=10001, description="Ray Client port")
-    head_port: int = Field(default=6379, description="Head Ray process port")
-    address: Optional[str] = Field(
-        default=None,
-        description=("Ray cluster address to connect to (None = start as head node)"),
+    client_port: int = Field(
+        default=10001, ge=1024, le=65535, description="Ray Client port"
+    )
+    head_port: int = Field(
+        default=6379, ge=1024, le=65535, description="Head Ray process port"
     )
 
 
-class RayGPUConfig(BaseModel):
+class RayGPUConfig(RayNodeConfig):
     """Ray GPU service configuration"""
 
-    enabled: bool = Field(default=True, description="Enable Ray GPU service")
     image: Optional[str] = Field(default=None, description="Docker image")
-    build: Optional[BuildConfig] = Field(
-        default=None, description="Docker build configuration"
-    )
     runtime: str = Field(default="nvidia", description="Container runtime")
-    cpus: Optional[float] = Field(default=None, description="CPU limit")
-    memory: Optional[str] = Field(default=None, description="Memory limit")
-    dashboard_port: int = Field(default=8266, description="Ray Dashboard port")
-    client_port: int = Field(default=10002, description="Ray Client port")
-    head_port: int = Field(default=6380, description="Head Ray process port")
-    address: Optional[str] = Field(
-        default=None,
-        description=("Ray cluster address to connect to (None = start as head node)"),
+    dashboard_port: int = Field(
+        default=8266, ge=1024, le=65535, description="Ray Dashboard port"
+    )
+    client_port: int = Field(
+        default=10002, ge=1024, le=65535, description="Ray Client port"
+    )
+    head_port: int = Field(
+        default=6380, ge=1024, le=65535, description="Head Ray process port"
     )
 
 
@@ -133,7 +173,9 @@ class MLflowPostgresConfig(BaseModel):
     enabled: bool = Field(default=True)
     image: str = Field(default="postgres:16-alpine")
     user: str = Field(default="mlflow")
-    password: str = Field(default="mlflow")
+    password: str = Field(
+        default="mlflow", description="Database password (prefer environment variable)"
+    )
     database: str = Field(default="mlflow")
 
 
@@ -198,8 +240,49 @@ class ClusterTestConfig(BaseModel):
     )
 
 
-class Config(BaseModel):
+class NodesHealthServiceConfig(BaseModel):
+    """Health service settings for head election"""
+
+    url: str = Field(default="http://health:8080")
+    timeout: int = Field(default=1, ge=1)
+    max_retries: int = Field(default=3, ge=0)
+    retry_interval: float = Field(default=0.5, ge=0)
+
+
+class NodesClusterConfig(BaseModel):
+    """Cluster timing settings for head discovery"""
+
+    discovery_timeout: int = Field(default=5, ge=1)
+    wait_for_head: int = Field(default=30, ge=1)
+
+
+class NodesConfig(BaseModel):
+    """Node whitelist and head election settings"""
+
+    head_whitelist: list[str] = Field(default_factory=lambda: ["ray-cpu", "ray-gpu"])
+    head_address: Optional[str] = Field(default=None)
+    health_service: NodesHealthServiceConfig = Field(
+        default_factory=NodesHealthServiceConfig
+    )
+    cluster: NodesClusterConfig = Field(default_factory=NodesClusterConfig)
+
+    @field_validator("head_whitelist")
+    @classmethod
+    def validate_head_whitelist(cls, v: list[str]) -> list[str]:
+        if not v:
+            raise ValueError("head_whitelist must contain at least one host")
+        return v
+
+
+class Config(BaseSettings):
     """Main configuration model"""
+
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_prefix="CSLR_",
+        env_nested_delimiter="__",
+        case_sensitive=False,
+    )
 
     host: HostConfig = Field(default_factory=HostConfig)
     project: ProjectConfig
@@ -207,3 +290,69 @@ class Config(BaseModel):
     services: ServicesConfig = Field(default_factory=ServicesConfig)
     volumes: VolumesConfig = Field(default_factory=VolumesConfig)
     cluster_test: ClusterTestConfig = Field(default_factory=ClusterTestConfig)
+    nodes: NodesConfig = Field(default_factory=NodesConfig)
+
+    @model_validator(mode="after")
+    def check_port_conflicts(self) -> "Config":
+        """Check for port conflicts across services"""
+        ports = []
+
+        # Ray ports
+        if self.services.ray.cpu.enabled:
+            ports.extend(
+                [
+                    ("ray-cpu-dashboard", self.services.ray.cpu.dashboard_port),
+                    ("ray-cpu-client", self.services.ray.cpu.client_port),
+                    ("ray-cpu-head", self.services.ray.cpu.head_port),
+                ]
+            )
+
+        if self.services.ray.gpu.enabled:
+            ports.extend(
+                [
+                    ("ray-gpu-dashboard", self.services.ray.gpu.dashboard_port),
+                    ("ray-gpu-client", self.services.ray.gpu.client_port),
+                    ("ray-gpu-head", self.services.ray.gpu.head_port),
+                ]
+            )
+
+        # Other service ports
+        if self.services.mlflow.enabled:
+            ports.append(("mlflow", self.services.mlflow.port))
+
+        if self.services.redis.enabled:
+            ports.append(("redis", self.services.redis.port))
+
+        if self.services.marimo.enabled:
+            ports.append(("marimo", self.services.marimo.port))
+
+        if self.services.health.enabled:
+            ports.append(("health", self.services.health.port))
+
+        # Check for duplicates
+        seen = set()
+        duplicates = []
+        for name, port in ports:
+            if port in seen:
+                duplicates.append(f"{name}:{port}")
+            seen.add(port)
+
+        if duplicates:
+            raise ValueError(f"Port conflicts detected: {', '.join(duplicates)}")
+
+        return self
+
+    @classmethod
+    def settings_customise_sources(
+        cls,
+        settings_cls: Type["Config"],
+        init_settings: PydanticBaseSettingsSource,
+        env_settings: PydanticBaseSettingsSource,
+        dotenv_settings: PydanticBaseSettingsSource,
+        file_secret_settings: PydanticBaseSettingsSource,
+    ) -> Tuple[PydanticBaseSettingsSource, ...]:
+        """
+        Customize settings sources priority.
+        Priority: env vars > .env file > YAML (init) > file secrets > defaults
+        """
+        return env_settings, dotenv_settings, init_settings, file_secret_settings
