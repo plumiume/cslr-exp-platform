@@ -244,6 +244,22 @@ nodes:
 
 ## トラブルシューティング
 
+### `uv run black` が `No such file or directory` で失敗する
+
+**症状**: `uv run black --version` が `Failed to spawn: black` で失敗する。
+
+**原因**: 別ワークツリーで作られた `.venv/bin/black` の shebang が、現在存在しない別パスの Python を指している。
+
+**対処法**:
+
+```bash
+rm -rf .venv
+uv sync --all-groups
+uv run black --version
+```
+
+必要に応じて、`uv run python -m black --version` でも確認できます。
+
 ### クラスターが起動しない
 
 ```bash
