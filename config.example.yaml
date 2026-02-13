@@ -31,7 +31,6 @@ nodes:
 volumes:
   mlflow_data: ./data/mlflow
   postgres_data: ./data/postgres
-  ray_data: ./data/ray
 
 services:
   # ヘルスチェック用サービス

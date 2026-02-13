@@ -74,6 +74,8 @@ services:
       - HEAD_ADDRESS_CFG={{ nodes.head_address or '' }}
       - HEALTH_URL={{ nodes.health_service.url }}
       - HEALTH_TIMEOUT={{ nodes.health_service.timeout }}
+      - HEALTH_MAX_RETRIES={{ nodes.health_service.max_retries }}
+      - HEALTH_RETRY_INTERVAL={{ nodes.health_service.retry_interval }}
       - DISCOVERY_TIMEOUT={{ nodes.cluster.discovery_timeout }}
       - WAIT_FOR_HEAD={{ nodes.cluster.wait_for_head }}
 {% if services.ray.cpu.cpus %}
@@ -136,6 +138,8 @@ services:
       - HEAD_ADDRESS_CFG={{ nodes.head_address or '' }}
       - HEALTH_URL={{ nodes.health_service.url }}
       - HEALTH_TIMEOUT={{ nodes.health_service.timeout }}
+      - HEALTH_MAX_RETRIES={{ nodes.health_service.max_retries }}
+      - HEALTH_RETRY_INTERVAL={{ nodes.health_service.retry_interval }}
       - DISCOVERY_TIMEOUT={{ nodes.cluster.discovery_timeout }}
       - WAIT_FOR_HEAD={{ nodes.cluster.wait_for_head }}
       - RAY_NUM_GPUS=1
@@ -274,8 +278,3 @@ networks:
     ipam:
       config:
         - subnet: {{ network.subnet }}
-
-volumes:
-  mlflow_data:
-  postgres_data:
-  ray_data:

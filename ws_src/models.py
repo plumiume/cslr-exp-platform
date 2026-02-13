@@ -77,10 +77,6 @@ class RayNodeConfig(BaseModel):
     dashboard_port: int = Field(ge=1024, le=65535, description="Ray Dashboard port")
     client_port: int = Field(ge=1024, le=65535, description="Ray Client port")
     head_port: int = Field(ge=1024, le=65535, description="Head Ray process port")
-    address: Optional[str] = Field(
-        default=None,
-        description=("Ray cluster address to connect to (None = start as head node)"),
-    )
 
     @field_validator("memory")
     @classmethod
@@ -90,12 +86,12 @@ class RayNodeConfig(BaseModel):
             return v
         if not re.match(r"^\d+[gmGM]$", v):
             raise ValueError("Memory must be format like '8g' or '512m'")
-        
+
         # Extract numeric value and check if it's greater than 0
         value = int(v[:-1])
         if value <= 0:
             raise ValueError("Memory value must be greater than 0")
-        
+
         return v.lower()
 
 
@@ -118,7 +114,6 @@ class RayGPUConfig(RayNodeConfig):
     """Ray GPU service configuration"""
 
     image: Optional[str] = Field(default=None, description="Docker image")
-    runtime: str = Field(default="nvidia", description="Container runtime")
     dashboard_port: int = Field(
         default=8266, ge=1024, le=65535, description="Ray Dashboard port"
     )
@@ -225,7 +220,6 @@ class VolumesConfig(BaseModel):
 
     mlflow_data: str = Field(default="./data/mlflow")
     postgres_data: str = Field(default="./data/postgres")
-    ray_data: str = Field(default="./data/ray")
 
 
 class NodesHealthServiceConfig(BaseModel):
