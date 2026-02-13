@@ -12,11 +12,17 @@ x-gpu: &gpu
             count: all
             capabilities: [gpu]
 
+{% set ray_target = cluster_test.target %}
+{% set target_host = "ray-gpu" if ray_target == "gpu" else "ray-cpu" %}
+{% set target_head_port = services.ray.gpu.head_port if ray_target == "gpu" else services.ray.cpu.head_port %}
+{% set target_dashboard_port = services.ray.gpu.dashboard_port if ray_target == "gpu" else services.ray.cpu.dashboard_port %}
+{% set target_client_port = services.ray.gpu.client_port if ray_target == "gpu" else services.ray.cpu.client_port %}
+
 x-ray: &ray
-{% if services.ray.cpu.enabled %}
-  image: {{ services.ray.cpu.image }}
-{% elif services.ray.gpu.enabled %}
+{% if ray_target == "gpu" %}
   image: {{ services.ray.gpu.image }}
+{% else %}
+  image: {{ services.ray.cpu.image }}
 {% endif %}
   restart: unless-stopped
 
@@ -46,7 +52,9 @@ services:
       - RAY_HEAD_PORT={{ services.ray.cpu.head_port }}
       - RAY_DASHBOARD_PORT={{ services.ray.cpu.dashboard_port }}
       - RAY_CLIENT_PORT={{ services.ray.cpu.client_port }}
+{% if services.ray.cpu.cpus %}
       - RAY_NUM_CPUS={{ services.ray.cpu.cpus }}
+{% endif %}
       - USE_CONDA_ENV=1
     volumes:
       - ../template/ray-ep.sh:/app/ray-ep.sh:ro
@@ -57,11 +65,17 @@ services:
     depends_on:
       - health
 {% endif %}
+{% if services.ray.cpu.cpus or services.ray.cpu.memory %}
     deploy:
       resources:
         limits:
+{% if services.ray.cpu.cpus %}
           cpus: "{{ services.ray.cpu.cpus }}"
+{% endif %}
+{% if services.ray.cpu.memory %}
           memory: {{ services.ray.cpu.memory }}
+{% endif %}
+{% endif %}
     ports:
       - "{{ services.ray.cpu.dashboard_port }}:{{ services.ray.cpu.dashboard_port }}"
       - "{{ services.ray.cpu.client_port }}:{{ services.ray.cpu.client_port }}"
@@ -83,7 +97,9 @@ services:
       - RAY_DASHBOARD_PORT={{ services.ray.gpu.dashboard_port }}
       - RAY_CLIENT_PORT={{ services.ray.gpu.client_port }}
       - RAY_NUM_GPUS=1
+{% if services.ray.gpu.cpus %}
       - RAY_NUM_CPUS={{ services.ray.gpu.cpus }}
+{% endif %}
       - USE_CONDA_ENV=1
     volumes:
       - ../template/ray-ep.sh:/app/ray-ep.sh:ro
@@ -101,9 +117,15 @@ services:
             - driver: nvidia
               count: all
               capabilities: [gpu]
+{% if services.ray.gpu.cpus or services.ray.gpu.memory %}
         limits:
+{% if services.ray.gpu.cpus %}
           cpus: "{{ services.ray.gpu.cpus }}"
+{% endif %}
+{% if services.ray.gpu.memory %}
           memory: {{ services.ray.gpu.memory }}
+{% endif %}
+{% endif %}
     ports:
       - "{{ services.ray.gpu.dashboard_port }}:{{ services.ray.gpu.dashboard_port }}"
       - "{{ services.ray.gpu.client_port }}:{{ services.ray.gpu.client_port }}"
@@ -120,13 +142,12 @@ services:
     restart: "no"
     shm_size: '1gb'
     extra_hosts:
-      - "ray-cpu:{{ host.ip_address }}"
-      - "ray-gpu:{{ host.ip_address }}"
+      - "{{ target_host }}:{{ host.ip_address }}"
       - "health:{{ host.ip_address }}"
     environment:
-      - RAY_HEAD_PORT={{ services.ray.cpu.head_port }}
-      - RAY_DASHBOARD_PORT={{ services.ray.cpu.dashboard_port }}
-      - RAY_CLIENT_PORT={{ services.ray.cpu.client_port }}
+      - RAY_HEAD_PORT={{ target_head_port }}
+      - RAY_DASHBOARD_PORT={{ target_dashboard_port }}
+      - RAY_CLIENT_PORT={{ target_client_port }}
       - RAY_NUM_CPUS=1
     volumes:
       - ../template/ray-ep.sh:/app/ray-ep.sh:ro
@@ -140,26 +161,23 @@ services:
         echo "Testing connectivity to main cluster..."
         
         # DNS/Network connectivity test
-        ping -c 2 ray-cpu || echo "⚠ Cannot ping ray-cpu"
-        {% if host.has_gpu and services.ray.gpu.enabled %}
-        ping -c 2 ray-gpu || echo "⚠ Cannot ping ray-gpu"
-        {% endif %}
+        ping -c 2 {{ target_host }} || echo "⚠ Cannot ping {{ target_host }}"
         ping -c 2 health || echo "⚠ Cannot ping health"
         
         # Port connectivity test
-        timeout 2 bash -c "</dev/tcp/ray-cpu/{{ services.ray.cpu.head_port }}" && echo "✓ ray-cpu:{{ services.ray.cpu.head_port }} reachable" || echo "✗ ray-cpu:{{ services.ray.cpu.head_port }} unreachable"
+        timeout 2 bash -c "</dev/tcp/{{ target_host }}/{{ target_head_port }}" && echo "✓ {{ target_host }}:{{ target_head_port }} reachable" || echo "✗ {{ target_host }}:{{ target_head_port }} unreachable"
         timeout 2 bash -c "</dev/tcp/health/8080" && echo "✓ health:8080 reachable" || echo "✗ health:8080 unreachable"
         
         # Ray client connection test
         echo ""
         echo "Testing Ray client connection..."
-        su - ray -c "python3 -c 'import ray; ray.init(\"ray://{{ host.ip_address }}:{{ services.ray.cpu.client_port }}\", ignore_reinit_error=True); print(\"✓ Ray client connected\"); print(\"Resources:\", ray.cluster_resources()); ray.shutdown()' || echo '✗ Ray client connection failed'"
+        su - ray -c "python3 -c 'import ray; ray.init(\"ray://{{ host.ip_address }}:{{ target_client_port }}\", ignore_reinit_error=True); print(\"✓ Ray client connected\"); print(\"Resources:\", ray.cluster_resources()); ray.shutdown()' || echo '✗ Ray client connection failed'"
         
         echo ""
         echo "Test client container will sleep for debugging..."
         tail -f /dev/null
     depends_on:
-      - ray-cpu
+      - {{ target_host }}
 {% if services.health.enabled %}
       - health
 {% endif %}
@@ -173,15 +191,14 @@ services:
     restart: "no"
     shm_size: '1gb'
     extra_hosts:
-      - "ray-cpu:{{ host.ip_address }}"
-      - "ray-gpu:{{ host.ip_address }}"
+      - "{{ target_host }}:{{ host.ip_address }}"
       - "health:{{ host.ip_address }}"
     environment:
-      - RAY_HEAD_PORT={{ services.ray.cpu.head_port }}
-      - RAY_DASHBOARD_PORT={{ services.ray.cpu.dashboard_port }}
-      - RAY_CLIENT_PORT={{ services.ray.cpu.client_port }}
+      - RAY_HEAD_PORT={{ target_head_port }}
+      - RAY_DASHBOARD_PORT={{ target_dashboard_port }}
+      - RAY_CLIENT_PORT={{ target_client_port }}
       - RAY_NUM_CPUS=2
-      - HEAD_ADDRESS=ray-cpu:{{ services.ray.cpu.head_port }}
+      - HEAD_ADDRESS={{ target_host }}:{{ target_head_port }}
     volumes:
       - ../template/ray-ep.sh:/app/ray-ep.sh:ro
       - ../nodes.yaml:/config/nodes.yaml:ro
@@ -194,8 +211,8 @@ services:
         echo "Testing connectivity to main cluster..."
         
         # Network connectivity test
-        ping -c 2 ray-cpu ||  echo "⚠ Cannot ping ray-cpu"
-        timeout 2 bash -c "</dev/tcp/ray-cpu/{{ services.ray.cpu.head_port }}" && echo "✓ ray-cpu:{{ services.ray.cpu.head_port }} reachable" || echo "✗ ray-cpu:{{ services.ray.cpu.head_port }} unreachable"
+        ping -c 2 {{ target_host }} ||  echo "⚠ Cannot ping {{ target_host }}"
+        timeout 2 bash -c "</dev/tcp/{{ target_host }}/{{ target_head_port }}" && echo "✓ {{ target_host }}:{{ target_head_port }} reachable" || echo "✗ {{ target_host }}:{{ target_head_port }} unreachable"
         timeout 2 bash -c "</dev/tcp/health/8080" && echo "✓ health:8080 reachable" || echo "✗ health:8080 unreachable"
         
         # Verify ray-ep.sh compatibility (should start as worker)
@@ -206,7 +223,7 @@ services:
         export USE_CONDA_ENV=1
         /app/ray-ep.sh
     depends_on:
-      - ray-cpu
+      - {{ target_host }}
 {% if services.health.enabled %}
       - health
 {% endif %}

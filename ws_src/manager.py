@@ -7,7 +7,7 @@ Workspace manager for Docker Compose operations.
 import socket
 import subprocess
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Literal
 
 import typer
 import yaml
@@ -156,7 +156,9 @@ class WorkspaceManager:
 
         return config
 
-    def generate_cluster_test_file(self) -> Config:
+    def generate_cluster_test_file(
+        self, target: Optional[Literal["cpu", "gpu"]] = None
+    ) -> Config:
         """Generate cluster-test.compose.yaml from template"""
         with Progress(
             SpinnerColumn(),
@@ -166,8 +168,29 @@ class WorkspaceManager:
             progress.add_task("Loading configuration...", total=None)
             config = self.load_config()
 
+            if target is not None:
+                config.cluster_test.target = target
+
             progress.add_task("Detecting host state...", total=None)
             config = self.detect_host_state(config)
+
+            if config.cluster_test.target == "cpu":
+                if not config.services.ray.cpu.enabled:
+                    raise ValueError(
+                        "cluster_test.target=cpu ですが"
+                        " services.ray.cpu.enabled が false です"
+                    )
+
+            if config.cluster_test.target == "gpu":
+                if not config.host.has_gpu:
+                    raise ValueError(
+                        "cluster_test.target=gpu ですが host.has_gpu が false です"
+                    )
+                if not config.services.ray.gpu.enabled:
+                    raise ValueError(
+                        "cluster_test.target=gpu ですが"
+                        " services.ray.gpu.enabled が false です"
+                    )
 
             progress.add_task("Rendering cluster test template...", total=None)
             output = self.render_template(config, self.test_template_path.name)

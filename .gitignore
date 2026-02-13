@@ -40,3 +40,4 @@ Thumbs.db
 
 # UV lock
 uv.lock
+.pyre/

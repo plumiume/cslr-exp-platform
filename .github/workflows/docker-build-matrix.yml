@@ -144,7 +144,7 @@ jobs:
       - name: List built images
         if: always()
         run: |
-          docker images plumiume/cslr-exp-platform
+          docker images plumiiume/cslr-exp-platform
         shell: pwsh
       
       - name: Docker system prune (cleanup)

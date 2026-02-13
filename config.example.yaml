@@ -19,6 +19,9 @@ volumes:
   postgres_data: ./data/postgres
   ray_data: ./data/ray
 
+cluster_test:
+  target: cpu  # cpu / gpu
+
 services:
   # ヘルスチェック用サービス
   health:

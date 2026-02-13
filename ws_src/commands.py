@@ -8,7 +8,7 @@ import json
 import subprocess
 import sys
 from pathlib import Path
-from typing import Annotated, Optional
+from typing import Annotated, Literal, Optional
 
 import typer
 from rich.console import Console
@@ -40,12 +40,33 @@ def up(
     remove_orphans: Annotated[
         bool, typer.Option("--remove-orphans", help="Remove orphan containers")
     ] = False,
+    profile: Annotated[
+        Optional[str], typer.Option("--profile", help="Docker Compose profile to use")
+    ] = None,
     services: Annotated[
         Optional[list[str]], typer.Argument(help="Services to start")
     ] = None,
 ):
     """Start services with docker compose up"""
-    compose_args = ["up"]
+    project_root = Path(__file__).parent.parent.resolve()
+    manager = WorkspaceManager(project_root)
+
+    # Auto-select profile for ray services if not specified
+    if profile is None:
+        config = manager.load_config()
+        config = manager.detect_host_state(config)
+
+        # Select ray-gpu if GPU is available and enabled, otherwise ray-cpu
+        if config.host.has_gpu and config.services.ray.gpu.enabled:
+            profile = "ray-gpu"
+        elif config.services.ray.cpu.enabled:
+            profile = "ray-cpu"
+
+    compose_args = []
+    if profile:
+        compose_args.extend(["--profile", profile])
+
+    compose_args.append("up")
 
     if detach:
         compose_args.append("-d")
@@ -57,8 +78,6 @@ def up(
     if services:
         compose_args.extend(services)
 
-    project_root = Path(__file__).parent.parent.resolve()
-    manager = WorkspaceManager(project_root)
     sys.exit(manager.run_docker_compose(compose_args))
 
 
@@ -353,6 +372,10 @@ def test(
             "--head", help="Explicit head address (host:port) for worker nodes"
         ),
     ] = None,
+    target: Annotated[
+        Optional[Literal["cpu", "gpu"]],
+        typer.Option("--target", help="Cluster test target node"),
+    ] = None,
 ):
     """Run cluster connectivity tests with isolated test containers"""
     project_root = Path(__file__).parent.parent.resolve()
@@ -360,7 +383,7 @@ def test(
 
     try:
         # Generate test compose file
-        manager.generate_cluster_test_file()
+        manager.generate_cluster_test_file(target=target)
 
         # Build environment with optional HEAD_ADDRESS
         env = None
