@@ -14,10 +14,23 @@ host:
 network:
   subnet: 172.28.0.0/16
 
+nodes:
+  head_whitelist:
+    - ray-cpu
+    - ray-gpu
+  head_address: null
+  health_service:
+    url: "http://health:8080"
+    timeout: 1
+    max_retries: 3
+    retry_interval: 0.5
+  cluster:
+    discovery_timeout: 5
+    wait_for_head: 30
+
 volumes:
   mlflow_data: ./data/mlflow
   postgres_data: ./data/postgres
-  ray_data: ./data/ray
 
 services:
   # ヘルスチェック用サービス
@@ -27,17 +40,20 @@ services:
 
   # Ray クラスター設定
   ray:
+    # 共通設定: CPU/GPU ノードの両方に適用
+    # 公式イメージを使用する場合
+    # image: rayproject/ray:latest
+    # カスタムイメージをビルドする場合
+    image: cslr-exp-platform:ray-runtime
+    build:
+      enabled: true
+      dockerfile: ../Dockerfile
+      target: ray-runtime
+      context: ..
+
     # CPU ヘッドノード
     cpu:
       enabled: true
-      # 公式イメージを使用: image: rayproject/ray:latest
-      # カスタムイメージをビルド: image: cslr-exp-platform:ray-runtime
-      image: cslr-exp-platform:ray-runtime
-      build:
-        enabled: true
-        dockerfile: ../Dockerfile
-        target: ray-runtime
-        context: ..
       cpus: 4
       memory: 8g
       head_port: 6379
@@ -47,14 +63,6 @@ services:
     # GPU ヘッドノード
     gpu:
       enabled: true
-      # 公式イメージを使用: image: rayproject/ray:latest-gpu
-      # カスタムイメージをビルド: image: cslr-exp-platform:ray-runtime
-      image: cslr-exp-platform:ray-runtime
-      build:
-        enabled: true
-        dockerfile: ../Dockerfile
-        target: ray-runtime
-        context: ..
       cpus: 4
       memory: 16g
       head_port: 6380
@@ -76,7 +84,7 @@ services:
       enabled: true
       image: postgres:16-alpine
       user: mlflow
-      password: mlflow
+      password: CHANGE_ME_INVALID_PASSWORD  # 必須: .env または環境変数で上書き
       database: mlflow
 
   # Marimo サービス

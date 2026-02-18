@@ -46,6 +46,15 @@ class WorkspaceManager:
             console.print(f"[red]Error: {self.config_path} not found[/red]")
             raise typer.Exit(1)
 
+        legacy_nodes_path = self.project_root / "nodes.yaml"
+        if legacy_nodes_path.exists():
+            console.print(
+                "[red]Error: legacy nodes.yaml is no longer supported. "
+                "Move nodes settings into config.yaml"
+                " > nodes and remove nodes.yaml.[/red]"
+            )
+            raise typer.Exit(1)
+
         with open(self.config_path, encoding="utf-8") as f:
             data = yaml.safe_load(f)
 

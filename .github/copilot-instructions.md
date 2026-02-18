@@ -11,6 +11,6 @@
 
 ## Examples
 
-- Run: `uv run python tools/generate_config_schema.py`
+- Run: `uv run ws schema generate`
 - Module: `uv run python -m ws generate`
 - Add: `uv add rich`

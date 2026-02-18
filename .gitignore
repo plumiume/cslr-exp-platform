@@ -40,3 +40,6 @@ Thumbs.db
 
 # UV lock
 uv.lock
+
+# Backup files
+*.bak

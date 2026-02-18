@@ -23,23 +23,16 @@ echo "Starting Ray node..."
 HOSTNAME=$(hostname)
 echo "Hostname: $HOSTNAME"
 
-# Load nodes configuration
-NODES_CONFIG="/config/nodes.yaml"
-if [ ! -f "$NODES_CONFIG" ]; then
-    echo "ERROR: nodes.yaml not found at $NODES_CONFIG"
-    exit 1
-fi
+# Load head-election settings from environment (generated from config.yaml)
+WHITELIST="${HEAD_WHITELIST:-ray-cpu ray-gpu}"
+HEALTH_URL="${HEALTH_URL:-http://health:8080}"
+HEALTH_TIMEOUT="${HEALTH_TIMEOUT:-1}"
+HEALTH_MAX_RETRIES="${HEALTH_MAX_RETRIES:-3}"
+HEALTH_RETRY_INTERVAL="${HEALTH_RETRY_INTERVAL:-0.5}"
+DISCOVERY_TIMEOUT="${DISCOVERY_TIMEOUT:-2}"
+WAIT_FOR_HEAD="${WAIT_FOR_HEAD:-60}"
+HEAD_ADDRESS_CFG="${HEAD_ADDRESS_CFG:-}"
 
-# Parse YAML (simple grep-based parsing for head_whitelist)
-WHITELIST=$(grep -A 100 "head_whitelist:" "$NODES_CONFIG" | grep "^  -" | sed 's/^  - //' | tr -d '\r' | tr '\n' ' ')
-HEALTH_URL=$(grep "url:" "$NODES_CONFIG" | head -1 | sed 's/.*url: *"\(.*\)"/\1/' | tr -d '\r')
-HEALTH_TIMEOUT=$(grep "timeout:" "$NODES_CONFIG" | head -1 | sed 's/.*timeout: *\([0-9]*\)/\1/' | tr -d '\r')
-
-# Parse head_address (explicit head address override)
-HEAD_ADDRESS_CFG=$(grep "^head_address:" "$NODES_CONFIG" | sed 's/head_address: *//' | sed 's/"//g' | tr -d ' \r')
-if [ "$HEAD_ADDRESS_CFG" = "null" ] || [ -z "$HEAD_ADDRESS_CFG" ]; then
-    HEAD_ADDRESS_CFG=""
-fi
 # Environment variable HEAD_ADDRESS overrides config file
 if [ -n "${HEAD_ADDRESS:-}" ]; then
     HEAD_ADDRESS_CFG="$HEAD_ADDRESS"
@@ -47,6 +40,7 @@ fi
 
 echo "Head whitelist: $WHITELIST"
 echo "Health service: $HEALTH_URL (timeout: ${HEALTH_TIMEOUT}s)"
+echo "Health retries: ${HEALTH_MAX_RETRIES} (interval: ${HEALTH_RETRY_INTERVAL}s)"
 
 # Check if current node is in whitelist
 IN_WHITELIST=false
@@ -64,7 +58,20 @@ if [ "$IN_WHITELIST" = "true" ]; then
     
     # Check if health service is available
     echo "Checking health service..."
-    if timeout ${HEALTH_TIMEOUT} curl -sf "$HEALTH_URL" > /dev/null 2>&1; then
+    HEALTH_OK=false
+    attempt=1
+    while [ "$attempt" -le "$HEALTH_MAX_RETRIES" ]; do
+        if timeout "${HEALTH_TIMEOUT}" curl -sf "$HEALTH_URL" > /dev/null 2>&1; then
+            HEALTH_OK=true
+            break
+        fi
+        if [ "$attempt" -lt "$HEALTH_MAX_RETRIES" ]; then
+            sleep "$HEALTH_RETRY_INTERVAL"
+        fi
+        attempt=$((attempt + 1))
+    done
+
+    if [ "$HEALTH_OK" = "true" ]; then
         echo "✓ Health service is available"
         
         # Check if head node already exists
@@ -75,7 +82,7 @@ if [ "$IN_WHITELIST" = "true" ]; then
                 # Try to connect to potential head node
                 HEAD_PORT="${RAY_HEAD_PORT:-6379}"
                 echo "  Checking $node:$HEAD_PORT..."
-                if timeout 2 bash -c "</dev/tcp/$node/$HEAD_PORT" 2>/dev/null; then
+                if timeout "$DISCOVERY_TIMEOUT" bash -c "</dev/tcp/$node/$HEAD_PORT" 2>/dev/null; then
                     echo "✓ Head node already exists on $node (reachable)"
                     HEAD_EXISTS=true
                     RAY_ADDRESS="$node:$HEAD_PORT"
@@ -93,7 +100,7 @@ if [ "$IN_WHITELIST" = "true" ]; then
             echo "→ Starting as WORKER node (connecting to $RAY_ADDRESS)"
         fi
     else
-        echo "⚠ Health service unavailable - starting as HEAD node"
+        echo "⚠ Health service unavailable after ${HEALTH_MAX_RETRIES} retries - starting as HEAD node"
         MODE="head"
     fi
 else
@@ -129,14 +136,15 @@ else
     
     echo "  Target: $HEAD_HOST:$HEAD_PORT"
     echo "  Note: Ensure $HEAD_HOST is reachable from this host (check DNS/hosts file)"
-    
-    for i in {1..60}; do
+
+    i=1
+    while [ "$i" -le "$WAIT_FOR_HEAD" ]; do
         if timeout 2 bash -c "</dev/tcp/$HEAD_HOST/$HEAD_PORT" 2>/dev/null; then
             echo "✓ Ray head node is reachable!"
             break
         fi
-        if [ $i -eq 60 ]; then
-            echo "ERROR: Cannot connect to Ray head node after 60 seconds"
+        if [ "$i" -eq "$WAIT_FOR_HEAD" ]; then
+            echo "ERROR: Cannot connect to Ray head node after ${WAIT_FOR_HEAD} seconds"
             echo "  Troubleshooting:"
             echo "    1. Check if head node is running: docker ps"
             echo "    2. Verify network connectivity: ping $HEAD_HOST"
@@ -144,8 +152,9 @@ else
             echo "    4. Verify firewall allows port $HEAD_PORT"
             exit 1
         fi
-        [ $((i % 10)) -eq 0 ] && echo "  Waiting... ($i/60)"
+        [ $((i % 10)) -eq 0 ] && echo "  Waiting... ($i/${WAIT_FOR_HEAD})"
         sleep 1
+        i=$((i + 1))
     done
     
     RAY_CMD+=("--address=$RAY_ADDRESS")

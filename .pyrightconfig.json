@@ -1,0 +1,6 @@
+{
+  "include": ["ws_src", "tools", "tests"],
+  "exclude": [".venv", "**/__pycache__", "_build"],
+  "typeCheckingMode": "strict",
+  "reportMissingTypeStubs": "none"
+}
