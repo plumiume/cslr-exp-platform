@@ -108,18 +108,6 @@ GPU 追加フィールド:
 
 ### services.mlflow
 
-<<<<<<< HEAD
-| フィールド | 型 | デフォルト |
-|---|---|---|
-| `enabled` | `bool` | `true` |
-| `image` | `str` | `ghcr.io/mlflow/mlflow:latest` |
-| `port` | `int` | `5000` |
-| `postgres.enabled` | `bool` | `true` |
-| `postgres.image` | `str` | `postgres:16-alpine` |
-| `postgres.user` | `str` | `mlflow` |
-| `postgres.password` | `str` | `mlflow` |
-| `postgres.database` | `str` | `mlflow` |
-=======
 MLflow Tracking サーバーの設定
 
 | フィールド | 型 | デフォルト | 説明 |
@@ -152,7 +140,6 @@ CSLR_SERVICES__MLFLOW__POSTGRES__PASSWORD="secure_password_here"
 ```
 
 ---
->>>>>>> origin/main
 
 ### services.redis
 
