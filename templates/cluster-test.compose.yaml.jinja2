@@ -12,6 +12,16 @@ x-gpu: &gpu
             count: all
             capabilities: [gpu]
 
+x-ray-environment: &ray-environment
+  HEAD_WHITELIST: "{{ nodes.head_whitelist | join(' ') }}"
+  HEAD_ADDRESS_CFG: "{{ nodes.head_address or '' }}"
+  HEALTH_URL: {{ nodes.health_service.url }}
+  HEALTH_TIMEOUT: {{ nodes.health_service.timeout }}
+  HEALTH_MAX_RETRIES: {{ nodes.health_service.max_retries }}
+  HEALTH_RETRY_INTERVAL: {{ nodes.health_service.retry_interval }}
+  DISCOVERY_TIMEOUT: {{ nodes.cluster.discovery_timeout }}
+  WAIT_FOR_HEAD: {{ nodes.cluster.wait_for_head }}
+
 {% set ray_target = cluster_test.target %}
 {% set target_host = "ray-gpu" if ray_target == "gpu" else "ray-cpu" %}
 {% set target_head_port = services.ray.gpu.head_port if ray_target == "gpu" else services.ray.cpu.head_port %}
@@ -54,36 +64,29 @@ services:
     restart: "no"
     shm_size: '2gb'
     environment:
-      - RAY_HEAD_PORT={{ services.ray.cpu.head_port }}
-      - RAY_DASHBOARD_PORT={{ services.ray.cpu.dashboard_port }}
-      - RAY_CLIENT_PORT={{ services.ray.cpu.client_port }}
+      <<: *ray-environment
+      RAY_HEAD_PORT: {{ services.ray.cpu.head_port }}
+      RAY_DASHBOARD_PORT: {{ services.ray.cpu.dashboard_port }}
+      RAY_CLIENT_PORT: {{ services.ray.cpu.client_port }}
     {% if services.ray.cpu.node_ip_address %}
-      - NODE_IP_ADDRESS={{ services.ray.cpu.node_ip_address }}
+      NODE_IP_ADDRESS: {{ services.ray.cpu.node_ip_address }}
     {% endif %}
     {% if services.ray.cpu.node_manager_port %}
-      - NODE_MANAGER_PORT={{ services.ray.cpu.node_manager_port }}
+      NODE_MANAGER_PORT: {{ services.ray.cpu.node_manager_port }}
     {% endif %}
     {% if services.ray.cpu.object_manager_port %}
-      - OBJECT_MANAGER_PORT={{ services.ray.cpu.object_manager_port }}
+      OBJECT_MANAGER_PORT: {{ services.ray.cpu.object_manager_port }}
     {% endif %}
     {% if services.ray.cpu.min_worker_port %}
-      - MIN_WORKER_PORT={{ services.ray.cpu.min_worker_port }}
+      MIN_WORKER_PORT: {{ services.ray.cpu.min_worker_port }}
     {% endif %}
     {% if services.ray.cpu.max_worker_port %}
-      - MAX_WORKER_PORT={{ services.ray.cpu.max_worker_port }}
+      MAX_WORKER_PORT: {{ services.ray.cpu.max_worker_port }}
     {% endif %}
-      - HEAD_WHITELIST={{ nodes.head_whitelist | join(' ') }}
-      - HEAD_ADDRESS_CFG={{ nodes.head_address or '' }}
-      - HEALTH_URL={{ nodes.health_service.url }}
-      - HEALTH_TIMEOUT={{ nodes.health_service.timeout }}
-      - HEALTH_MAX_RETRIES={{ nodes.health_service.max_retries }}
-      - HEALTH_RETRY_INTERVAL={{ nodes.health_service.retry_interval }}
-      - DISCOVERY_TIMEOUT={{ nodes.cluster.discovery_timeout }}
-      - WAIT_FOR_HEAD={{ nodes.cluster.wait_for_head }}
 {% if services.ray.cpu.cpus %}
-      - RAY_NUM_CPUS={{ services.ray.cpu.cpus }}
+      RAY_NUM_CPUS: {{ services.ray.cpu.cpus }}
 {% endif %}
-      - USE_CONDA_ENV=1
+      USE_CONDA_ENV: "1"
     volumes:
       - ../entrypoints/ray.sh:/app/ray.sh:ro
       - ../_build/logs/ray-cpu/tmp-ray:/tmp/ray
@@ -122,37 +125,30 @@ services:
     restart: "no"
     shm_size: '2gb'
     environment:
-      - RAY_HEAD_PORT={{ services.ray.gpu.head_port }}
-      - RAY_DASHBOARD_PORT={{ services.ray.gpu.dashboard_port }}
-      - RAY_CLIENT_PORT={{ services.ray.gpu.client_port }}
+      <<: *ray-environment
+      RAY_HEAD_PORT: {{ services.ray.gpu.head_port }}
+      RAY_DASHBOARD_PORT: {{ services.ray.gpu.dashboard_port }}
+      RAY_CLIENT_PORT: {{ services.ray.gpu.client_port }}
     {% if services.ray.gpu.node_ip_address %}
-      - NODE_IP_ADDRESS={{ services.ray.gpu.node_ip_address }}
+      NODE_IP_ADDRESS: {{ services.ray.gpu.node_ip_address }}
     {% endif %}
     {% if services.ray.gpu.node_manager_port %}
-      - NODE_MANAGER_PORT={{ services.ray.gpu.node_manager_port }}
+      NODE_MANAGER_PORT: {{ services.ray.gpu.node_manager_port }}
     {% endif %}
     {% if services.ray.gpu.object_manager_port %}
-      - OBJECT_MANAGER_PORT={{ services.ray.gpu.object_manager_port }}
+      OBJECT_MANAGER_PORT: {{ services.ray.gpu.object_manager_port }}
     {% endif %}
     {% if services.ray.gpu.min_worker_port %}
-      - MIN_WORKER_PORT={{ services.ray.gpu.min_worker_port }}
+      MIN_WORKER_PORT: {{ services.ray.gpu.min_worker_port }}
     {% endif %}
     {% if services.ray.gpu.max_worker_port %}
-      - MAX_WORKER_PORT={{ services.ray.gpu.max_worker_port }}
+      MAX_WORKER_PORT: {{ services.ray.gpu.max_worker_port }}
     {% endif %}
-      - HEAD_WHITELIST={{ nodes.head_whitelist | join(' ') }}
-      - HEAD_ADDRESS_CFG={{ nodes.head_address or '' }}
-      - HEALTH_URL={{ nodes.health_service.url }}
-      - HEALTH_TIMEOUT={{ nodes.health_service.timeout }}
-      - HEALTH_MAX_RETRIES={{ nodes.health_service.max_retries }}
-      - HEALTH_RETRY_INTERVAL={{ nodes.health_service.retry_interval }}
-      - DISCOVERY_TIMEOUT={{ nodes.cluster.discovery_timeout }}
-      - WAIT_FOR_HEAD={{ nodes.cluster.wait_for_head }}
-      - RAY_NUM_GPUS=1
+      RAY_NUM_GPUS: "1"
 {% if services.ray.gpu.cpus %}
-      - RAY_NUM_CPUS={{ services.ray.gpu.cpus }}
+      RAY_NUM_CPUS: {{ services.ray.gpu.cpus }}
 {% endif %}
-      - USE_CONDA_ENV=1
+      USE_CONDA_ENV: "1"
     volumes:
       - ../entrypoints/ray.sh:/app/ray.sh:ro
       - ../_build/logs/ray-gpu/tmp-ray:/tmp/ray
@@ -190,7 +186,7 @@ services:
   # Test containers - Network isolated
   test-ray-client:
     <<: *ray
-    image: {% if ray_target == "gpu" %}{{ services.ray.gpu.image }}{% else %}{{ services.ray.cpu.image }}{% endif %}
+    image: {{ services.ray.gpu.image if ray_target == "gpu" else services.ray.cpu.image }}
     container_name: {{ project.name }}-test-client
     hostname: test-ray-client
     restart: "no"
@@ -199,17 +195,12 @@ services:
       - "{{ target_host }}:{{ host.ip_address }}"
       - "health:{{ host.ip_address }}"
     environment:
-      - RAY_HEAD_PORT={{ target_head_port }}
-      - RAY_DASHBOARD_PORT={{ target_dashboard_port }}
-      - RAY_CLIENT_PORT={{ target_client_port }}
-      - RAY_PYTHON_BIN=${RAY_PYTHON_BIN:-python3}
-      - HEAD_WHITELIST={{ nodes.head_whitelist | join(' ') }}
-      - HEAD_ADDRESS_CFG={{ nodes.head_address or '' }}
-      - HEALTH_URL={{ nodes.health_service.url }}
-      - HEALTH_TIMEOUT={{ nodes.health_service.timeout }}
-      - DISCOVERY_TIMEOUT={{ nodes.cluster.discovery_timeout }}
-      - WAIT_FOR_HEAD={{ nodes.cluster.wait_for_head }}
-      - RAY_NUM_CPUS=1
+      <<: *ray-environment
+      RAY_HEAD_PORT: {{ target_head_port }}
+      RAY_DASHBOARD_PORT: {{ target_dashboard_port }}
+      RAY_CLIENT_PORT: {{ target_client_port }}
+      RAY_PYTHON_BIN: "${RAY_PYTHON_BIN:-python3}"
+      RAY_NUM_CPUS: "1"
     volumes:
       - ../entrypoints/ray.sh:/app/ray.sh:ro
       - ../_build/logs/test-client/tmp-ray:/tmp/ray
@@ -251,7 +242,7 @@ services:
 
   test-ray-worker:
     <<: *ray
-    image: {% if ray_target == "gpu" %}{{ services.ray.gpu.image }}{% else %}{{ services.ray.cpu.image }}{% endif %}
+    image: {{ services.ray.gpu.image if ray_target == "gpu" else services.ray.cpu.image }}
     container_name: {{ project.name }}-test-worker
     hostname: test-ray-worker
     restart: "no"
@@ -260,22 +251,17 @@ services:
       - "{{ target_host }}:{{ host.ip_address }}"
       - "health:{{ host.ip_address }}"
     environment:
-      - RAY_HEAD_PORT={{ target_head_port }}
-      - RAY_DASHBOARD_PORT={{ target_dashboard_port }}
-      - RAY_CLIENT_PORT={{ target_client_port }}
-      - NODE_IP_ADDRESS={{ host.ip_address }}
-      - NODE_MANAGER_PORT={{ cluster_test.worker_node_manager_port }}
-      - OBJECT_MANAGER_PORT={{ cluster_test.worker_object_manager_port }}
-      - MIN_WORKER_PORT={{ cluster_test.worker_min_worker_port }}
-      - MAX_WORKER_PORT={{ cluster_test.worker_max_worker_port }}
-      - HEAD_WHITELIST={{ nodes.head_whitelist | join(' ') }}
-      - HEAD_ADDRESS_CFG={{ nodes.head_address or '' }}
-      - HEALTH_URL={{ nodes.health_service.url }}
-      - HEALTH_TIMEOUT={{ nodes.health_service.timeout }}
-      - DISCOVERY_TIMEOUT={{ nodes.cluster.discovery_timeout }}
-      - WAIT_FOR_HEAD={{ nodes.cluster.wait_for_head }}
-      - RAY_NUM_CPUS=2
-      - HEAD_ADDRESS={{ target_host }}:{{ target_head_port }}
+      <<: *ray-environment
+      RAY_HEAD_PORT: {{ target_head_port }}
+      RAY_DASHBOARD_PORT: {{ target_dashboard_port }}
+      RAY_CLIENT_PORT: {{ target_client_port }}
+      NODE_IP_ADDRESS: {{ host.ip_address }}
+      NODE_MANAGER_PORT: {{ cluster_test.worker_node_manager_port }}
+      OBJECT_MANAGER_PORT: {{ cluster_test.worker_object_manager_port }}
+      MIN_WORKER_PORT: {{ cluster_test.worker_min_worker_port }}
+      MAX_WORKER_PORT: {{ cluster_test.worker_max_worker_port }}
+      RAY_NUM_CPUS: "2"
+      HEAD_ADDRESS: "{{ target_host }}:{{ target_head_port }}"
     volumes:
       - ../entrypoints/ray.sh:/app/ray.sh:ro
       - ../_build/logs/test-worker/tmp-ray:/tmp/ray
@@ -325,22 +311,17 @@ services:
       - "ray-cpu:{{ host.ip_address }}"
       - "health:{{ host.ip_address }}"
     environment:
-      - RAY_HEAD_PORT={{ cpu_head_port }}
-      - RAY_DASHBOARD_PORT={{ cpu_dashboard_port }}
-      - RAY_CLIENT_PORT={{ cpu_client_port }}
-      - NODE_IP_ADDRESS={{ host.ip_address }}
-      - NODE_MANAGER_PORT={{ cluster_test.worker_cpu_node_manager_port }}
-      - OBJECT_MANAGER_PORT={{ cluster_test.worker_cpu_object_manager_port }}
-      - MIN_WORKER_PORT={{ cluster_test.worker_cpu_min_worker_port }}
-      - MAX_WORKER_PORT={{ cluster_test.worker_cpu_max_worker_port }}
-      - HEAD_WHITELIST={{ nodes.head_whitelist | join(' ') }}
-      - HEAD_ADDRESS_CFG={{ nodes.head_address or '' }}
-      - HEALTH_URL={{ nodes.health_service.url }}
-      - HEALTH_TIMEOUT={{ nodes.health_service.timeout }}
-      - DISCOVERY_TIMEOUT={{ nodes.cluster.discovery_timeout }}
-      - WAIT_FOR_HEAD={{ nodes.cluster.wait_for_head }}
-      - RAY_NUM_CPUS=2
-      - HEAD_ADDRESS=ray-cpu:{{ cpu_head_port }}
+      <<: *ray-environment
+      RAY_HEAD_PORT: {{ cpu_head_port }}
+      RAY_DASHBOARD_PORT: {{ cpu_dashboard_port }}
+      RAY_CLIENT_PORT: {{ cpu_client_port }}
+      NODE_IP_ADDRESS: {{ host.ip_address }}
+      NODE_MANAGER_PORT: {{ cluster_test.worker_cpu_node_manager_port }}
+      OBJECT_MANAGER_PORT: {{ cluster_test.worker_cpu_object_manager_port }}
+      MIN_WORKER_PORT: {{ cluster_test.worker_cpu_min_worker_port }}
+      MAX_WORKER_PORT: {{ cluster_test.worker_cpu_max_worker_port }}
+      RAY_NUM_CPUS: "2"
+      HEAD_ADDRESS: "ray-cpu:{{ cpu_head_port }}"
     volumes:
       - ../entrypoints/ray.sh:/app/ray.sh:ro
       - ../_build/logs/test-worker-cpu/tmp-ray:/tmp/ray
