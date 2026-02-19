@@ -260,7 +260,7 @@ def main(
         help="フェーズ別ビルド (phase1, phase2, phase3, phase4)",
     ),
     cuda: str | None = typer.Option(
-        None, "--cuda", help="特定のCUDAバージョンのみビルド (例: 12.8.1)"
+        None, "--cuda", help="特定のCUDAバージョンのみビルド (例: 12.8.1 / cpu / none / null)"
     ),
     python: str | None = typer.Option(
         None, "--python", help="特定のPythonバージョンのみビルド (例: 3.13)"
