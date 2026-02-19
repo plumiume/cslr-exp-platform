@@ -24,7 +24,7 @@ app = typer.Typer(
     add_completion=False,
 )
 schema_app = typer.Typer(help="Schema utilities")
-app.add_typer(schema_app, name="schema")
+app.add_typer(schema_app, name="schema", rich_help_panel="Utilities")
 
 
 # ============================================================================
@@ -32,7 +32,7 @@ app.add_typer(schema_app, name="schema")
 # ============================================================================
 
 
-@app.command()
+@app.command(rich_help_panel="Docker")
 def up(
     detach: Annotated[
         bool, typer.Option("-d", "--detach", help="Detached mode")
@@ -65,7 +65,7 @@ def up(
     sys.exit(manager.run_docker_compose(compose_args))
 
 
-@app.command()
+@app.command(rich_help_panel="Docker")
 def down(
     volumes: Annotated[
         bool, typer.Option("-v", "--volumes", help="Remove volumes")
@@ -87,7 +87,7 @@ def down(
     sys.exit(manager.run_docker_compose(compose_args))
 
 
-@app.command()
+@app.command(rich_help_panel="Setup")
 def generate():
     """Generate compose.yaml from template"""
     project_root = Path(__file__).parent.parent.resolve()
@@ -99,7 +99,7 @@ def generate():
         raise typer.Exit(1)
 
 
-@app.command()
+@app.command(rich_help_panel="Setup")
 def init(
     force: Annotated[
         bool,
@@ -142,7 +142,7 @@ def schema_generate():
         raise typer.Exit(1)
 
 
-@app.command()
+@app.command(rich_help_panel="Docker")
 def ps():
     """Show running services"""
     project_root = Path(__file__).parent.parent.resolve()
@@ -150,7 +150,7 @@ def ps():
     sys.exit(manager.run_docker_compose(["ps"]))
 
 
-@app.command()
+@app.command(rich_help_panel="Docker")
 def status(
     all: Annotated[
         bool,
@@ -358,7 +358,7 @@ def status(
         raise typer.Exit(1)
 
 
-@app.command()
+@app.command(rich_help_panel="Docker")
 def logs(
     follow: Annotated[
         bool, typer.Option("-f", "--follow", help="Follow log output")
@@ -386,7 +386,7 @@ def logs(
     sys.exit(manager.run_docker_compose(compose_args))
 
 
-@app.command()
+@app.command(rich_help_panel="Docker")
 def test(
     up: Annotated[bool, typer.Option("--up", help="Start test containers")] = False,
     down: Annotated[bool, typer.Option("--down", help="Stop test containers")] = False,

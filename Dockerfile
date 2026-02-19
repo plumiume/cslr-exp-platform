@@ -26,9 +26,9 @@ ARG PYTHON_VERSION=3.14
 ARG CUDA_TAG=cu130
 
 # =====================================================================
-#  devel : フルビルドステージ (nvcc + cmake あり)
+#  simple-devel : フルビルドステージ (nvcc + cmake あり)
 # =====================================================================
-FROM nvidia/cuda:${CUDA_VERSION}-cudnn-devel-ubuntu24.04 AS devel
+FROM nvidia/cuda:${CUDA_VERSION}-cudnn-devel-ubuntu24.04 AS simple-devel
 
 ARG PYTHON_VERSION
 ARG CUDA_TAG
@@ -130,22 +130,22 @@ WORKDIR /workspace
 CMD ["bash"]
 
 # =====================================================================
-#  runtime : env 直接コピー (conda 本体不要 — 軽量)
+#  simple-runtime : env 直接コピー (conda 本体不要 — 軽量)
 # =====================================================================
-FROM runtime-base AS runtime
+FROM runtime-base AS simple-runtime
 
 # 施策 A: /opt/conda/envs/py のみコピー (base env/conda 本体を排除)
-COPY --from=devel /opt/conda/envs/py /opt/conda/envs/py
+COPY --from=simple-devel /opt/conda/envs/py /opt/conda/envs/py
 
-RUN echo "=== runtime Verification ===" \
+RUN echo "=== simple-runtime Verification ===" \
     && python -c "import sys; print(f'Python={sys.version}')" \
     && python -c "import torch; print(f'torch={torch.__version__}, CUDA={torch.version.cuda}')" \
     && python -c "import torch_geometric; print(f'torch_geometric={torch_geometric.__version__}')"
 
 # =====================================================================
-#  ray-devel : devel + Ray  (nightly wheel → ソースビルド)
+#  ray-devel : simple-devel + Ray  (nightly wheel → ソースビルド)
 # =====================================================================
-FROM devel AS ray-devel
+FROM simple-devel AS ray-devel
 
 SHELL ["conda", "run", "-n", "py", "/bin/bash", "-c"]
 

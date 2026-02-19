@@ -15,11 +15,13 @@ build-matrix.yaml の設定を読み込んで、複数のDocker イメージを�
 
     # 最小構成のテストビルド
     uv run python tools/build_matrix.py --minimal
-
+    # フェーズ別ビルド
+    uv run python tools/build_matrix.py --phase phase1
     # ドライラン（コマンドを表示するのみ）
     uv run python tools/build_matrix.py --all --dry-run
 """
 
+import shutil
 import subprocess
 from datetime import datetime
 from pathlib import Path
@@ -38,6 +40,81 @@ def load_matrix(file_path: Path) -> dict[str, Any]:
     """ビルドマトリックス設定を読み込む"""
     with open(file_path, encoding="utf-8") as f:
         return yaml.safe_load(f)
+
+
+def get_disk_free_gb() -> float:
+    """Cドライブの空き容量をGBで取得"""
+    stat = shutil.disk_usage("C:\\")
+    return stat.free / (1024**3)
+
+
+def push_to_registry(image_tag: str, registry_url: str = "localhost:5001") -> bool:
+    """イメージをローカルレジストリにプッシュ"""
+    try:
+        # レジストリ用のタグを作成
+        repo_name = image_tag.split(":")[0].split("/")[-1]
+        tag_name = image_tag.split(":")[1]
+        registry_tag = f"{registry_url}/{repo_name}:{tag_name}"
+
+        console.print(f"\n[cyan]レジストリにプッシュ: {registry_tag}[/cyan]")
+
+        # タグ付け
+        subprocess.run(
+            ["docker", "tag", image_tag, registry_tag],
+            check=True,
+            capture_output=True,
+        )
+
+        # プッシュ
+        subprocess.run(
+            ["docker", "push", registry_tag],
+            check=True,
+            capture_output=False,
+        )
+
+        console.print(f"[green]✓ プッシュ完了: {registry_tag}[/green]")
+        return True
+    except subprocess.CalledProcessError as e:
+        console.print(f"[red]✗ プッシュ失敗: {e}[/red]")
+        return False
+
+
+def cleanup_runtime_images(keep_devel: bool = True) -> None:
+    """古いruntimeイメージを削除（develは保持可能）"""
+    console.print("\n[yellow]古いruntimeイメージをクリーンアップ中...[/yellow]")
+
+    try:
+        # runtimeイメージのリストを取得
+        result = subprocess.run(
+            [
+                "docker",
+                "images",
+                "--filter",
+                "reference=plumiiume/cslr-exp-platform:*runtime*",
+                "--format",
+                "{{.Repository}}:{{.Tag}}",
+            ],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+
+        images = result.stdout.strip().split("\n")
+        for img in images:
+            if not img:
+                continue
+            # develを保持する場合はスキップ
+            if keep_devel and "devel" in img:
+                continue
+
+            console.print(f"削除: {img}")
+            subprocess.run(
+                ["docker", "rmi", img],
+                capture_output=True,
+                check=False,  # エラーは無視
+            )
+    except Exception as e:
+        console.print(f"[yellow]クリーンアップ中にエラー: {e}[/yellow]")
 
 
 def build_command(
@@ -115,11 +192,42 @@ def filter_matrix(
     return filtered
 
 
+def get_phase_builds(
+    phase: str,
+    matrix_data: dict[str, Any],
+) -> list[tuple[dict[str, Any], dict[str, str]]]:
+    """フェーズに基づいてビルド対象を取得"""
+    if phase == "phase1":
+        # Phase 1: CUDA 12.8.1 + Python 3.13 基本構成
+        builds = filter_matrix(matrix_data, "12.8.1", "3.13", "simple-runtime")
+        builds.extend(filter_matrix(matrix_data, "12.8.1", "3.13", "ray-runtime"))
+        return builds
+    elif phase == "phase2":
+        # Phase 2: CUDA 12.8.1 + Python 3.13 開発環境
+        builds = filter_matrix(matrix_data, "12.8.1", "3.13", "simple-devel")
+        builds.extend(filter_matrix(matrix_data, "12.8.1", "3.13", "ray-devel"))
+        builds.extend(filter_matrix(matrix_data, "12.8.1", "3.13", "marimo-devel"))
+        return builds
+    elif phase == "phase3":
+        # Phase 3: CUDA 13.1.1 + Python 3.14 次世代環境
+        return filter_matrix(matrix_data, "13.1.1", "3.14")
+    elif phase == "phase4":
+        # Phase 4: CUDA 12.8.1 + Python 3.14 バリエーション
+        return filter_matrix(matrix_data, "12.8.1", "3.14")
+    else:
+        return []
+
+
 @app.command()
 def main(
     all: bool = typer.Option(False, "--all", help="全てのビルド構成を実行"),
     minimal: bool = typer.Option(
         False, "--minimal", help="最小構成のテストビルドを実行"
+    ),
+    phase: str | None = typer.Option(
+        None,
+        "--phase",
+        help="フェーズ別ビルド (phase1, phase2, phase3, phase4)",
     ),
     cuda: str | None = typer.Option(
         None, "--cuda", help="特定のCUDAバージョンのみビルド (例: 12.8.1)"
@@ -132,6 +240,12 @@ def main(
     ),
     dry_run: bool = typer.Option(
         False, "--dry-run", help="コマンドを表示するのみで実行しない"
+    ),
+    push_registry: bool = typer.Option(
+        False, "--push", help="ビルド後にローカルレジストリにプッシュ"
+    ),
+    monitor_disk: bool = typer.Option(
+        False, "--monitor-disk", help="ディスク容量を監視し、30GB未満で中断"
     ),
     matrix_file: Path = typer.Option(
         Path("build-matrix.yaml"),
@@ -165,13 +279,22 @@ def main(
         success, duration = run_build(cmd, dry_run)
         raise typer.Exit(code=0 if success else 1)
 
+    # フェーズ別ビルド
+    if phase:
+        if phase not in ["phase1", "phase2", "phase3", "phase4"]:
+            console.print(f"[red]エラー: 不明なフェーズ '{phase}'[/red]")
+            console.print("有効なフェーズ: phase1, phase2, phase3, phase4")
+            raise typer.Exit(code=1)
+        console.print(f"[bold cyan]フェーズ {phase} のビルドを実行します[/bold cyan]")
+        builds = get_phase_builds(phase, matrix_data)
     # フィルタリング
-    if all or cuda or python or target:
+    elif all or cuda or python or target:
         builds = filter_matrix(matrix_data, cuda, python, target)
     else:
         console.print("[yellow]いずれかのオプションを指定してください:[/yellow]")
         console.print("  --all : 全ビルドを実行")
         console.print("  --minimal : 最小構成のテストビルド")
+        console.print("  --phase : フェーズ別ビルド (phase1-4)")
         console.print("  --cuda, --python, --target : フィルタリングして実行")
         raise typer.Exit(code=1)
 
@@ -200,10 +323,34 @@ def main(
     console.print(f"\n[bold]合計 {len(builds)} 個のビルドを実行します[/bold]\n")
 
     # ビルド実行
-    results: list[tuple[str, bool, float]] = []
+    results: list[tuple[str, bool, float, int]] = []
     total_start = datetime.now()
+    initial_free = get_disk_free_gb() if monitor_disk else 0
+
+    if monitor_disk:
+        console.print(f"\n[cyan]開始時の空き容量: {initial_free:.2f} GB[/cyan]")
 
     for idx, (config, target_info) in enumerate(builds, 1):
+        # ディスク容量チェック
+        if monitor_disk and not dry_run:
+            current_free = get_disk_free_gb()
+            console.print(f"\n[cyan]現在の空き容量: {current_free:.2f} GB[/cyan]")
+
+            if current_free < 30:
+                console.print("\n[red]!!! 警告: 空き容量が30GB未満です !!![/red]")
+                console.print("[yellow]古いruntimeイメージを削除します...[/yellow]")
+                cleanup_runtime_images(keep_devel=True)
+
+                current_free = get_disk_free_gb()
+                if current_free < 30:
+                    console.print(
+                        "[red]容量不足が解消されませんでした。ビルドを中断します。[/red]"
+                    )
+                    break
+                console.print(
+                    f"[green]✓ クリーンアップ完了。空き容量: {current_free:.2f} GB[/green]"
+                )
+
         console.print(
             f"\n[bold blue]===== ビルド {idx}/{len(builds)} =====[/bold blue]"
         )
@@ -217,7 +364,46 @@ def main(
             platform=build_options["platform"],
         )
         success, duration = run_build(cmd, dry_run)
-        results.append((target_info["tag"], success, duration))
+
+        # イメージサイズを取得
+        image_size = 0
+        if success and not dry_run:
+            full_tag = f"{build_options['image_prefix']}:{target_info['tag']}"
+            try:
+                result = subprocess.run(
+                    ["docker", "image", "inspect", full_tag, "--format={{.Size}}"],
+                    capture_output=True,
+                    text=True,
+                    check=True,
+                )
+                image_size = int(result.stdout.strip())
+            except (subprocess.CalledProcessError, ValueError):
+                image_size = 0
+
+        results.append((target_info["tag"], success, duration, image_size))
+
+        # ビルド成功時の処理
+        if success and not dry_run:
+            full_tag = f"{build_options['image_prefix']}:{target_info['tag']}"
+
+            # レジストリにプッシュ
+            if push_registry:
+                push_to_registry(full_tag)
+
+            # runtimeイメージはローカルから削除（develは保持）
+            if (
+                monitor_disk
+                and "runtime" in target_info["name"]
+                and "devel" not in target_info["name"]
+            ):
+                console.print(
+                    f"[yellow]ローカルのruntimeイメージを削除: {full_tag}[/yellow]"
+                )
+                subprocess.run(
+                    ["docker", "rmi", full_tag],
+                    capture_output=True,
+                    check=False,
+                )
 
     total_end = datetime.now()
     total_duration = (total_end - total_start).total_seconds()
@@ -228,11 +414,24 @@ def main(
     result_table.add_column("Tag", style="magenta")
     result_table.add_column("Status", style="bold")
     result_table.add_column("Duration", style="cyan")
+    result_table.add_column("Size", style="yellow")
 
     success_count = 0
-    for tag, success, duration in results:
+    for tag, success, duration, size in results:
         status = "[green]✓ 成功[/green]" if success else "[red]✗ 失敗[/red]"
-        result_table.add_row(tag, status, f"{duration:.1f}s")
+
+        # サイズを人間が読みやすい形式に変換
+        if size > 0:
+            if size >= 1024**3:  # GB
+                size_str = f"{size / (1024**3):.2f} GB"
+            elif size >= 1024**2:  # MB
+                size_str = f"{size / (1024**2):.2f} MB"
+            else:
+                size_str = f"{size / 1024:.2f} KB"
+        else:
+            size_str = "-"
+
+        result_table.add_row(tag, status, f"{duration:.1f}s", size_str)
         if success:
             success_count += 1
 
