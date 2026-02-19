@@ -32,12 +32,18 @@ ARG PYTHON_VERSION=3.14
 # cu130 は CUDA 13.x 系ビルド（13.0/13.1 共通 tag）であり、
 # CUDA_VERSION=13.1.1 のランタイムで動作させることを意図している。
 ARG CUDA_TAG=cu130
+# simple-builder のベースイメージ。
+# 未指定時は従来どおり nvidia/cuda:${CUDA_VERSION}-cudnn-devel-ubuntu24.04 を使う。
+ARG BASE_IMAGE=nvidia/cuda:${CUDA_VERSION}-cudnn-devel-ubuntu24.04
+# runtime-base のベースイメージ。
+# 未指定時は従来どおり nvidia/cuda:${CUDA_VERSION}-cudnn-runtime-ubuntu24.04 を使う。
+ARG RUNTIME_BASE_IMAGE=nvidia/cuda:${CUDA_VERSION}-cudnn-runtime-ubuntu24.04
 
 # =====================================================================
 #  simple-builder : PyTorch + PyG フルビルドステージ (nvcc + cmake あり)
 #                  BuildKit キャッシュマウント有効。クリーンアップしない。
 # =====================================================================
-FROM nvidia/cuda:${CUDA_VERSION}-cudnn-devel-ubuntu24.04 AS simple-builder
+FROM ${BASE_IMAGE} AS simple-builder
 
 ARG PYTHON_VERSION
 ARG CUDA_TAG
@@ -137,7 +143,7 @@ CMD ["bash"]
 # =====================================================================
 #  runtime-base : 全 runtime の共通ベース
 # =====================================================================
-FROM nvidia/cuda:${CUDA_VERSION}-cudnn-runtime-ubuntu24.04 AS runtime-base
+FROM ${RUNTIME_BASE_IMAGE} AS runtime-base
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PATH=/opt/conda/envs/py/bin:${PATH}
@@ -166,6 +172,12 @@ RUN echo "=== simple-runtime Verification ===" \
     && python -c "import sys; print(f'Python={sys.version}')" \
     && python -c "import torch; print(f'torch={torch.__version__}, CUDA={torch.version.cuda}')" \
     && python -c "import torch_geometric; print(f'torch_geometric={torch_geometric.__version__}')"
+
+# =====================================================================
+#  simple-cpu : CPU 向けターゲット名のエイリアス
+#               分岐は build-arg (BASE_IMAGE/RUNTIME_BASE_IMAGE/CUDA_TAG) で行う
+# =====================================================================
+FROM simple-runtime AS simple-cpu
 
 # =====================================================================
 #  ray-builder : simple-builder + Ray  (nightly wheel → ソースビルド)
@@ -235,6 +247,11 @@ RUN echo "=== ray-runtime Verification ===" \
     && python -c "import ray; print(f'ray={ray.__version__}')"
 
 # =====================================================================
+#  ray-cpu : CPU 向けターゲット名のエイリアス
+# =====================================================================
+FROM ray-runtime AS ray-cpu
+
+# =====================================================================
 #  marimo-builder : ray-builder + Marimo
 #                   BuildKit キャッシュマウント有効。クリーンアップしない。
 # =====================================================================
@@ -276,3 +293,8 @@ RUN find /opt/conda/envs/py -type f -name "*.pyc" -delete \
 
 RUN echo "=== marimo-runtime Verification ===" \
     && python -c "import marimo; print(f'marimo={marimo.__version__}')"
+
+# =====================================================================
+#  marimo-cpu : CPU 向けターゲット名のエイリアス
+# =====================================================================
+FROM marimo-runtime AS marimo-cpu
