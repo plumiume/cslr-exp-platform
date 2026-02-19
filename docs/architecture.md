@@ -568,6 +568,49 @@ services:
 
 ---
 
+## Docker ビルドステージ
+
+### ステージツリー
+
+```
+simple-builder
+├── simple-devel        (キャッシュクリーンアップ済み開発用イメージ)
+└── simple-runtime      (runtime-base + COPY —— 本番用軽量イメージ)
+
+ray-builder  (FROM simple-builder)
+├── ray-devel
+└── ray-runtime         (runtime-base + COPY)
+
+marimo-builder  (FROM ray-builder)
+├── marimo-devel
+└── marimo-runtime      (runtime-base + COPY)
+```
+
+### ステージ責務
+
+| ステージ | `--mount=type=cache` | キャッシュクリーンアップ | 用途 |
+|---|---|---|---|
+| `*-builder` | ✅ 使う | しない | ビルド中間ステージ（BuildKit キャッシュ最大活用） |
+| `*-devel` | 不要 | する | 開発用最終イメージ（`conda clean`, `pip cache purge`, `.pyc` 削除） |
+| `*-runtime` | 不要 | する | 本番用最終イメージ（`COPY` で env のみ取り出し、`.pyc` 削除） |
+
+### ビルド例
+
+```bash
+# 特定ターゲットをビルド
+docker build --target marimo-runtime .
+docker build --target marimo-devel .
+
+# builder だけビルド（キャッシュ層として保持したい場合）
+docker build --target ray-builder .
+
+# build-matrix ツールで全イメージをビルド
+uv run python tools/build_matrix.py --all
+uv run python tools/build_matrix.py --target marimo-runtime
+```
+
+---
+
 ## 関連ドキュメント
 
 - [README.md](../README.md) - クイックスタート

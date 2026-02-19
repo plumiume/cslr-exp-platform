@@ -2,15 +2,20 @@
 # PyG + Ray + Marimo  |  CUDA 13.x + Python 3.14
 # =============================================================================
 # ステージツリー:
-#   devel  ─→ ray-devel  ─→ marimo-devel   (開発・ビルド用; conda あり)
-#   runtime-base ─→ runtime (from devel)
-#                ─→ ray-runtime (from ray-devel)
-#                ─→ marimo-runtime (from marimo-devel)
+#   simple-builder ─→ simple-devel
+#                  ─→ simple-runtime      (from runtime-base)
+#   ray-builder (from simple-builder)
+#              ─→ ray-devel
+#              ─→ ray-runtime             (from runtime-base)
+#   marimo-builder (from ray-builder)
+#                 ─→ marimo-devel
+#                 ─→ marimo-runtime       (from runtime-base)
 #
-# 最適化施策:
-#   A) /opt/conda/envs/py のみ直接コピー (base env/conda 本体を排除)
-#   B) Docker BuildKit キャッシュマウントでビルド高速化
-#   C) 最小限のクリーンアップ（__pycache__/.pyc のみ）
+# ステージ責務:
+#   *-builder  : BuildKit キャッシュマウントを活用した高速ビルド専用（中間ステージ）
+#                クリーンアップしない
+#   *-devel    : *-builder から派生。conda/pip キャッシュ・.pyc を除去した開発用最終イメージ
+#   *-runtime  : runtime-base + COPY --from=*-builder。.pyc のみ除去した本番用最終イメージ
 #
 # 保持するもの（runtime で torch.utils.cpp_extension 利用のため）:
 #   - torch/include, torch/share (C++/CUDA 拡張ビルドに必須)
@@ -26,9 +31,10 @@ ARG PYTHON_VERSION=3.14
 ARG CUDA_TAG=cu130
 
 # =====================================================================
-#  simple-devel : フルビルドステージ (nvcc + cmake あり)
+#  simple-builder : PyTorch + PyG フルビルドステージ (nvcc + cmake あり)
+#                  BuildKit キャッシュマウント有効。クリーンアップしない。
 # =====================================================================
-FROM nvidia/cuda:${CUDA_VERSION}-cudnn-devel-ubuntu24.04 AS simple-devel
+FROM nvidia/cuda:${CUDA_VERSION}-cudnn-devel-ubuntu24.04 AS simple-builder
 
 ARG PYTHON_VERSION
 ARG CUDA_TAG
@@ -37,7 +43,7 @@ ENV CONDA_DIR=/opt/conda
 ENV PATH=${CONDA_DIR}/bin:${PATH}
 
 # ビルドに必要なパッケージ + ccache (ビルド高速化)
-# ray-devel で必要な pkg-config/psmisc/unzip も含めて統合
+# ray-builder で必要な pkg-config/psmisc/unzip も含めて統合
 RUN apt-get update && apt-get install -y --no-install-recommends \
         wget ca-certificates git build-essential curl \
         cmake ninja-build ccache \
@@ -49,12 +55,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN wget -qO /tmp/miniforge.sh \
         "https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-Linux-x86_64.sh" \
     && bash /tmp/miniforge.sh -b -p ${CONDA_DIR} \
-    && rm /tmp/miniforge.sh \
-    && conda clean -afy
+    && rm /tmp/miniforge.sh
 
 # Python 環境
-RUN conda create -n py python=${PYTHON_VERSION} -y \
-    && conda clean -afy
+RUN conda create -n py python=${PYTHON_VERSION} -y
 
 # py 環境を PATH の先頭に追加（インタラクティブシェルでも py 環境の python がデフォルトになる）
 ENV PATH=/opt/conda/envs/py/bin:${PATH}
@@ -104,16 +108,24 @@ RUN --mount=type=cache,target=/root/.cache/pip \
         && echo "=== [Step C] Source building pyg_lib (最も時間がかかるステップ) ===" \
         && pip install --no-cache-dir --no-build-isolation git+https://github.com/pyg-team/pyg-lib.git )
 
-# --- devel: 最小限のクリーンアップ（プロファイラ・拡張ビルド・functorch 保持） ---
-RUN echo "=== devel Verification ===" \
+RUN echo "=== simple-builder Verification ===" \
     && python -c "import sys; print(f'Python={sys.version}')" \
     && python -c "import torch; print(f'torch={torch.__version__}, CUDA={torch.version.cuda}')" \
     && python -c "import torch_geometric; print(f'torch_geometric={torch_geometric.__version__}')" \
-    && python -c "exec('try:\n import pyg_lib\n print(f\"pyg_lib={pyg_lib.__version__}\")\nexcept Exception:\n print(\"pyg_lib: NOT AVAILABLE\")')" \
-    # --- 最小限のクリーンアップ: .pyc/__pycache__ のみ ---
+    && python -c "exec('try:\n import pyg_lib\n print(f\"pyg_lib={pyg_lib.__version__}\")\nexcept Exception:\n print(\"pyg_lib: NOT AVAILABLE\")')"
+
+WORKDIR /workspace
+CMD ["bash"]
+
+# =====================================================================
+#  simple-devel : simple-builder + キャッシュクリーンアップ (開発用最終イメージ)
+# =====================================================================
+FROM simple-builder AS simple-devel
+
+RUN conda clean -afy \
+    && pip cache purge 2>/dev/null || true \
     && find /opt/conda/envs/py -type f -name "*.pyc" -delete \
-    && find /opt/conda/envs/py -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true \
-    && conda clean -afy
+    && find /opt/conda/envs/py -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
 
 WORKDIR /workspace
 CMD ["bash"]
@@ -136,12 +148,15 @@ WORKDIR /workspace
 CMD ["bash"]
 
 # =====================================================================
-#  simple-runtime : env 直接コピー (conda 本体不要 — 軽量)
+#  simple-runtime : simple-builder の env を直接コピー (conda 本体不要 — 軽量)
 # =====================================================================
 FROM runtime-base AS simple-runtime
 
-# 施策 A: /opt/conda/envs/py のみコピー (base env/conda 本体を排除)
-COPY --from=simple-devel /opt/conda/envs/py /opt/conda/envs/py
+# /opt/conda/envs/py のみコピー (base env/conda 本体を排除)
+COPY --from=simple-builder /opt/conda/envs/py /opt/conda/envs/py
+
+RUN find /opt/conda/envs/py -type f -name "*.pyc" -delete \
+    && find /opt/conda/envs/py -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
 
 RUN echo "=== simple-runtime Verification ===" \
     && python -c "import sys; print(f'Python={sys.version}')" \
@@ -149,14 +164,14 @@ RUN echo "=== simple-runtime Verification ===" \
     && python -c "import torch_geometric; print(f'torch_geometric={torch_geometric.__version__}')"
 
 # =====================================================================
-#  ray-devel : simple-devel + Ray  (nightly wheel → ソースビルド)
+#  ray-builder : simple-builder + Ray  (nightly wheel → ソースビルド)
+#                BuildKit キャッシュマウント有効。クリーンアップしない。
 # =====================================================================
-FROM simple-devel AS ray-devel
+FROM simple-builder AS ray-builder
 
 SHELL ["conda", "run", "-n", "py", "/bin/bash", "-c"]
 
 # Bazelisk (Ray ソースビルドに必要 — nightly が使えなかった場合)
-# BuildKit キャッシュを使ってダウンロードを高速化
 RUN --mount=type=cache,target=/root/.cache/wget \
     wget -qO /usr/local/bin/bazel \
         "https://github.com/bazelbuild/bazelisk/releases/latest/download/bazelisk-linux-amd64" \
@@ -183,52 +198,77 @@ RUN --mount=type=cache,target=/root/.cache/pip \
     pip install --no-cache-dir "ray[data,train,tune,serve]" \
     || echo "=== Note: some Ray extras may not be resolved ==="
 
-# クリーニング（最小限）
-RUN echo "=== ray-devel Verification ===" \
-    && python -c "import ray; print(f'ray={ray.__version__}')" \
-    && find /opt/conda/envs/py -type f -name "*.pyc" -delete \
-    && find /opt/conda/envs/py -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true \
-    && conda clean -afy
+RUN echo "=== ray-builder Verification ===" \
+    && python -c "import ray; print(f'ray={ray.__version__}')"
 
 WORKDIR /workspace
 CMD ["bash"]
 
 # =====================================================================
-#  ray-runtime : env 直接コピー (軽量)
+#  ray-devel : ray-builder + キャッシュクリーンアップ (開発用最終イメージ)
+# =====================================================================
+FROM ray-builder AS ray-devel
+
+RUN conda clean -afy \
+    && pip cache purge 2>/dev/null || true \
+    && find /opt/conda/envs/py -type f -name "*.pyc" -delete \
+    && find /opt/conda/envs/py -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
+
+WORKDIR /workspace
+CMD ["bash"]
+
+# =====================================================================
+#  ray-runtime : ray-builder の env を直接コピー (軽量)
 # =====================================================================
 FROM runtime-base AS ray-runtime
 
-COPY --from=ray-devel /opt/conda/envs/py /opt/conda/envs/py
+COPY --from=ray-builder /opt/conda/envs/py /opt/conda/envs/py
+
+RUN find /opt/conda/envs/py -type f -name "*.pyc" -delete \
+    && find /opt/conda/envs/py -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
 
 RUN echo "=== ray-runtime Verification ===" \
     && python -c "import ray; print(f'ray={ray.__version__}')"
 
 # =====================================================================
-#  marimo-devel : ray-devel + Marimo
+#  marimo-builder : ray-builder + Marimo
+#                   BuildKit キャッシュマウント有効。クリーンアップしない。
 # =====================================================================
-FROM ray-devel AS marimo-devel
+FROM ray-builder AS marimo-builder
 
 SHELL ["conda", "run", "-n", "py", "/bin/bash", "-c"]
 
 RUN --mount=type=cache,target=/root/.cache/pip \
     pip install --no-cache-dir marimo
 
-# クリーニング（最小限）
-RUN echo "=== marimo-devel Verification ===" \
-    && python -c "import marimo; print(f'marimo={marimo.__version__}')" \
-    && find /opt/conda/envs/py -type f -name "*.pyc" -delete \
-    && find /opt/conda/envs/py -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true \
-    && conda clean -afy
+RUN echo "=== marimo-builder Verification ===" \
+    && python -c "import marimo; print(f'marimo={marimo.__version__}')"
 
 WORKDIR /workspace
 CMD ["bash"]
 
 # =====================================================================
-#  marimo-runtime : env 直接コピー (デフォルトターゲット)
+#  marimo-devel : marimo-builder + キャッシュクリーンアップ (開発用最終イメージ)
+# =====================================================================
+FROM marimo-builder AS marimo-devel
+
+RUN conda clean -afy \
+    && pip cache purge 2>/dev/null || true \
+    && find /opt/conda/envs/py -type f -name "*.pyc" -delete \
+    && find /opt/conda/envs/py -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
+
+WORKDIR /workspace
+CMD ["bash"]
+
+# =====================================================================
+#  marimo-runtime : marimo-builder の env を直接コピー (デフォルトターゲット)
 # =====================================================================
 FROM runtime-base AS marimo-runtime
 
-COPY --from=marimo-devel /opt/conda/envs/py /opt/conda/envs/py
+COPY --from=marimo-builder /opt/conda/envs/py /opt/conda/envs/py
+
+RUN find /opt/conda/envs/py -type f -name "*.pyc" -delete \
+    && find /opt/conda/envs/py -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
 
 RUN echo "=== marimo-runtime Verification ===" \
     && python -c "import marimo; print(f'marimo={marimo.__version__}')"
