@@ -21,6 +21,13 @@ def test_disk_usage_path_windows_uses_system_drive(monkeypatch):
     assert module._disk_usage_path() == "D:\\"
 
 
+def test_disk_usage_path_windows_normalizes_trailing_slash(monkeypatch):
+    module = _load_build_matrix_module()
+    monkeypatch.setattr(module.platform, "system", lambda: "Windows")
+    monkeypatch.setenv("SystemDrive", "D:\\")
+    assert module._disk_usage_path() == "D:\\"
+
+
 def test_disk_usage_path_non_windows_is_root(monkeypatch):
     module = _load_build_matrix_module()
     monkeypatch.setattr(module.platform, "system", lambda: "Linux")

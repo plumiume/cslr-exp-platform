@@ -61,7 +61,9 @@ def _is_windows() -> bool:
 
 def _disk_usage_path() -> str:
     if _is_windows():
-        system_drive = os.environ.get("SystemDrive") or "C:"
+        system_drive = (os.environ.get("SystemDrive") or "C:").rstrip("\\/")
+        if len(system_drive) == 1 and system_drive.isalpha():
+            system_drive = f"{system_drive}:"
         # shutil.disk_usage はドライブ直下のパスを期待する（例: "C:\\"）
         return f"{system_drive}\\"
     return "/"
