@@ -202,6 +202,7 @@ services:
       - RAY_HEAD_PORT={{ target_head_port }}
       - RAY_DASHBOARD_PORT={{ target_dashboard_port }}
       - RAY_CLIENT_PORT={{ target_client_port }}
+      - TEST_PYTHON_EXEC=${TEST_PYTHON_EXEC:-python}
       - HEAD_WHITELIST={{ nodes.head_whitelist | join(' ') }}
       - HEAD_ADDRESS_CFG={{ nodes.head_address or '' }}
       - HEALTH_URL={{ nodes.health_service.url }}
@@ -235,7 +236,7 @@ services:
         # Ray client connection test
         echo ""
         echo "Testing Ray client connection..."
-        su - ray -c "/home/ray/anaconda3/bin/python -c 'import ray; ray.init(\"ray://{{ host.ip_address }}:{{ target_client_port }}\", ignore_reinit_error=True); print(\"✓ Ray client connected\"); print(\"Resources:\", ray.cluster_resources()); ray.shutdown()' || echo '✗ Ray client connection failed'"
+        su - ray -c "$TEST_PYTHON_EXEC -c 'import ray; ray.init(\"ray://{{ host.ip_address }}:{{ target_client_port }}\", ignore_reinit_error=True); print(\"✓ Ray client connected\"); print(\"Resources:\", ray.cluster_resources()); ray.shutdown()' || echo '✗ Ray client connection failed'"
         
         echo ""
         echo "Test client container will sleep for debugging..."
