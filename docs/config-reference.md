@@ -108,6 +108,7 @@ GPU 追加フィールド:
 
 ### services.mlflow
 
+<<<<<<< HEAD
 | フィールド | 型 | デフォルト |
 |---|---|---|
 | `enabled` | `bool` | `true` |
@@ -118,6 +119,40 @@ GPU 追加フィールド:
 | `postgres.user` | `str` | `mlflow` |
 | `postgres.password` | `str` | `mlflow` |
 | `postgres.database` | `str` | `mlflow` |
+=======
+MLflow Tracking サーバーの設定
+
+| フィールド | 型 | デフォルト | 説明 |
+|-----------|-----|----------|------|
+| `enabled` | `bool` | `true` | MLflow を有効化 |
+| `port` | `int` | `5000` | MLflow UI ポート |
+| `backend_store_uri` | `str` | `"postgresql://..."` | バックエンドストア URI |
+| `default_artifact_root` | `str` | `"/mlflow/artifacts"` | アーティファクトのデフォルト保存先 |
+
+**データベース設定**:
+```yaml
+mlflow:
+  enabled: true
+  port: 5000
+  backend_store_uri: "postgresql://mlflow:mlflow@mlflow-postgres:5432/mlflow"
+  default_artifact_root: "/mlflow/artifacts"
+  
+  postgres:
+    user: "mlflow"
+    password: "${MLFLOW_DB_PASSWORD}"
+    db: "mlflow"
+```
+
+**セキュリティ要件**:
+`services.mlflow.postgres.password` はデフォルト値/空文字を禁止しています。機密情報（パスワードなど）は `.env` ファイルや環境変数で必ず注入してください:
+
+```bash
+# .env
+CSLR_SERVICES__MLFLOW__POSTGRES__PASSWORD="secure_password_here"
+```
+
+---
+>>>>>>> origin/main
 
 ### services.redis
 

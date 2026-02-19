@@ -127,6 +127,12 @@ class RayNodeConfig(BaseModel):
             return v
         if not re.match(r"^\d+[gmGM]$", v):
             raise ValueError("Memory must be format like '8g' or '512m'")
+
+        # Extract numeric value and check if it's greater than 0
+        value = int(v[:-1])
+        if value <= 0:
+            raise ValueError("Memory value must be greater than 0")
+
         return v.lower()
 
     @model_validator(mode="after")
@@ -166,7 +172,6 @@ class RayGPUConfig(RayNodeConfig):
     """Ray GPU service configuration"""
 
     image: Optional[str] = Field(default=None, description="Docker image")
-    runtime: str = Field(default="nvidia", description="Container runtime")
     dashboard_port: int = Field(
         default=8266, ge=1024, le=65535, description="Ray Dashboard port"
     )
@@ -218,7 +223,11 @@ class MLflowPostgresConfig(BaseModel):
     image: str = Field(default="postgres:16-alpine")
     user: str = Field(default="mlflow")
     password: str = Field(
-        default="mlflow", description="Database password (prefer environment variable)"
+        default="CHANGE_ME_INVALID_PASSWORD",
+        description=(
+            "Database password "
+            "(must be overridden via config/.env/environment variable)"
+        ),
     )
     database: str = Field(default="mlflow")
 
@@ -520,6 +529,29 @@ class Config(BaseSettings):
             self.cluster_test.worker_cpu_max_worker_port,
             ports,
         )
+
+        return self
+
+    @model_validator(mode="after")
+    def check_mlflow_password_security(self) -> "Config":
+        """Reject insecure/default MLflow PostgreSQL password values."""
+        if not (self.services.mlflow.enabled and self.services.mlflow.postgres.enabled):
+            return self
+
+        password = (self.services.mlflow.postgres.password or "").strip()
+        insecure_values = {
+            "",
+            "mlflow",
+            "CHANGE_ME_INVALID_PASSWORD",
+            "changeme",
+            "password",
+        }
+        if password in insecure_values:
+            raise ValueError(
+                "services.mlflow.postgres.password is insecure or unset. "
+                "Set a non-default value in config.yaml or via "
+                "CSLR_SERVICES__MLFLOW__POSTGRES__PASSWORD."
+            )
 
         return self
 

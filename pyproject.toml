@@ -31,3 +31,4 @@ dev = [
 
 [tool.flake8]
 max-line-length = 88
+extend-exclude = ".venv"

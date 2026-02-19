@@ -42,6 +42,12 @@ services:
     command: ["python3", "/app/health-ep.sh"]
     ports:
       - "0.0.0.0:{{ services.health.port }}:8080"
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080', timeout=1)"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 3s
     networks:
       - ray-network
 {% endif %}
@@ -83,6 +89,8 @@ services:
       - HEAD_ADDRESS_CFG={{ nodes.head_address or '' }}
       - HEALTH_URL={{ nodes.health_service.url }}
       - HEALTH_TIMEOUT={{ nodes.health_service.timeout }}
+      - HEALTH_MAX_RETRIES={{ nodes.health_service.max_retries }}
+      - HEALTH_RETRY_INTERVAL={{ nodes.health_service.retry_interval }}
       - DISCOVERY_TIMEOUT={{ nodes.cluster.discovery_timeout }}
       - WAIT_FOR_HEAD={{ nodes.cluster.wait_for_head }}
 {% if services.ray.cpu.cpus %}
@@ -95,13 +103,14 @@ services:
       - ../template/ray-ep.sh:/app/ray-ep.sh:ro
     user: root
 {% if services.ray.cpu.build and services.ray.cpu.build.enabled %}
-    entrypoint: ["/bin/bash", "-c", "apt-get update -qq && apt-get install -y -qq curl > /dev/null 2>&1 && /app/ray-ep.sh"]
+    entrypoint: ["/bin/bash", "-c", "/app/ray-ep.sh"]
 {% else %}
-    entrypoint: ["/bin/bash", "-c", "apt-get update -qq && apt-get install -y -qq curl > /dev/null 2>&1 && su ray -c '/app/ray-ep.sh'"]
+    entrypoint: ["/bin/bash", "-c", "su - ray -c '/app/ray-ep.sh'"]
 {% endif %}
 {% if services.health.enabled %}
     depends_on:
-      - health
+      health:
+        condition: service_healthy
 {% endif %}
 {% if services.ray.cpu.cpus or services.ray.cpu.memory %}
     deploy:
@@ -159,6 +168,8 @@ services:
       - HEAD_ADDRESS_CFG={{ nodes.head_address or '' }}
       - HEALTH_URL={{ nodes.health_service.url }}
       - HEALTH_TIMEOUT={{ nodes.health_service.timeout }}
+      - HEALTH_MAX_RETRIES={{ nodes.health_service.max_retries }}
+      - HEALTH_RETRY_INTERVAL={{ nodes.health_service.retry_interval }}
       - DISCOVERY_TIMEOUT={{ nodes.cluster.discovery_timeout }}
       - WAIT_FOR_HEAD={{ nodes.cluster.wait_for_head }}
       - RAY_NUM_GPUS=1
@@ -172,17 +183,29 @@ services:
       - ../template/ray-ep.sh:/app/ray-ep.sh:ro
     user: root
 {% if services.ray.gpu.build and services.ray.gpu.build.enabled %}
-    entrypoint: ["/bin/bash", "-c", "apt-get update -qq && apt-get install -y -qq curl > /dev/null 2>&1 && /app/ray-ep.sh"]
+    entrypoint: ["/bin/bash", "-c", "/app/ray-ep.sh"]
 {% else %}
-    entrypoint: ["/bin/bash", "-c", "apt-get update -qq && apt-get install -y -qq curl > /dev/null 2>&1 && su - ray -c '/app/ray-ep.sh'"]
+    entrypoint: ["/bin/bash", "-c", "su - ray -c '/app/ray-ep.sh'"]
+{% endif %}
+{% if services.ray.cpu.enabled or services.health.enabled %}
+    depends_on:
+{% if services.ray.cpu.enabled %}
+      ray-cpu:
+        condition: service_started
 {% endif %}
 {% if services.health.enabled %}
-    depends_on:
-      - health
+      health:
+        condition: service_healthy
 {% endif %}
-{% if services.ray.gpu.cpus or services.ray.gpu.memory %}
+{% endif %}
     deploy:
       resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+{% if services.ray.gpu.cpus or services.ray.gpu.memory %}
         limits:
 {% if services.ray.gpu.cpus %}
           cpus: "{{ services.ray.gpu.cpus }}"
@@ -190,11 +213,6 @@ services:
 {% if services.ray.gpu.memory %}
           memory: {{ services.ray.gpu.memory }}
 {% endif %}
-        reservations:
-          devices:
-            - driver: nvidia
-              count: all
-              capabilities: [gpu]
 {% endif %}
     ports:
       - "{{ services.ray.gpu.dashboard_port }}:{{ services.ray.gpu.dashboard_port }}"  # Ray Dashboard
@@ -273,7 +291,12 @@ services:
       - ../:/workspace
 {% if services.ray.cpu.enabled %}
     depends_on:
-      - ray-cpu
+      ray-cpu:
+        condition: service_started
+{% elif host.has_gpu and services.ray.gpu.enabled %}
+    depends_on:
+      ray-gpu:
+        condition: service_started
 {% endif %}
     networks:
       - ray-network
@@ -285,8 +308,3 @@ networks:
     ipam:
       config:
         - subnet: {{ network.subnet }}
-
-volumes:
-  mlflow_data:
-  postgres_data:
-  ray_data:
