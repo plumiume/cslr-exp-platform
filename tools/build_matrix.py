@@ -139,7 +139,7 @@ def cleanup_runtime_images(keep_devel: bool = True) -> None:
 
 
 def build_command(
-    cuda_version: str,
+    cuda_version: str | None,
     python_version: str,
     cuda_tag: str,
     target: str,
@@ -148,23 +148,44 @@ def build_command(
     platform: str,
 ) -> list[str]:
     """Dockerビルドコマンドを生成"""
-    return [
+    build_args: list[tuple[str, str]] = [
+        ("PYTHON_VERSION", python_version),
+        ("CUDA_TAG", cuda_tag),
+    ]
+
+    # CPU バリアント等で cuda_version が null の場合は CUDA_VERSION の build-arg を渡さない。
+    # 代わりに BASE_IMAGE/RUNTIME_BASE_IMAGE を明示して、分岐を build-arg に寄せる。
+    if cuda_version is None:
+        build_args.extend(
+            [
+                ("BASE_IMAGE", "ubuntu:24.04"),
+                ("RUNTIME_BASE_IMAGE", "ubuntu:24.04"),
+            ]
+        )
+    else:
+        build_args.insert(0, ("CUDA_VERSION", cuda_version))
+
+    cmd: list[str] = [
         "docker",
         "build",
         "--target",
         target,
-        "--build-arg",
-        f"CUDA_VERSION={cuda_version}",
-        "--build-arg",
-        f"PYTHON_VERSION={python_version}",
-        "--build-arg",
-        f"CUDA_TAG={cuda_tag}",
-        "-t",
-        f"{image_prefix}:{tag}",
-        "--platform",
-        platform,
-        ".",
     ]
+
+    for key, value in build_args:
+        cmd.extend(["--build-arg", f"{key}={value}"])
+
+    cmd.extend(
+        [
+            "-t",
+            f"{image_prefix}:{tag}",
+            "--platform",
+            platform,
+            ".",
+        ]
+    )
+
+    return cmd
 
 
 def run_build(cmd: list[str], dry_run: bool = False) -> tuple[bool, float]:
@@ -199,9 +220,18 @@ def filter_matrix(
     """マトリックスをフィルタリング"""
     filtered: list[tuple[dict[str, Any], dict[str, str]]] = []
 
+    normalized_cuda_filter = cuda_filter
+    if normalized_cuda_filter is not None:
+        normalized_cuda_filter = normalized_cuda_filter.strip()
+
     for config in matrix_data["matrix"]:
-        if cuda_filter and config["cuda_version"] != cuda_filter:
-            continue
+        if normalized_cuda_filter:
+            cfg_cuda_version = config.get("cuda_version")
+            if normalized_cuda_filter.lower() in {"cpu", "none", "null"}:
+                if cfg_cuda_version is not None:
+                    continue
+            elif cfg_cuda_version != normalized_cuda_filter:
+                continue
         if python_filter and config["python_version"] != python_filter:
             continue
 
@@ -251,7 +281,7 @@ def main(
         help="フェーズ別ビルド (phase1, phase2, phase3, phase4)",
     ),
     cuda: str | None = typer.Option(
-        None, "--cuda", help="特定のCUDAバージョンのみビルド (例: 12.8.1)"
+        None, "--cuda", help="特定のCUDAバージョンのみビルド (例: 12.8.1 / cpu / none / null)"
     ),
     python: str | None = typer.Option(
         None, "--python", help="特定のPythonバージョンのみビルド (例: 3.13)"
@@ -334,7 +364,7 @@ def main(
     for idx, (config, target_info) in enumerate(builds, 1):
         table.add_row(
             str(idx),
-            config["cuda_version"],
+            str(config.get("cuda_version") or "cpu"),
             config["python_version"],
             target_info["name"],
             target_info["tag"],

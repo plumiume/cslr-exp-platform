@@ -2,6 +2,32 @@
 # 複数のCUDA/Python/ターゲットの組み合わせでビルドを実行するための設定
 
 matrix:
+  # CPUのみ + Python 3.13
+  - cuda_version: null
+    python_version: "3.13"
+    cuda_tag: "cpu"
+    ray_version: "2.54.0"
+    targets:
+      - name: simple-cpu
+        tag: "simple-cpu-py313-torch2.8.0"
+      - name: ray-cpu
+        tag: "ray-cpu-py313-torch2.8.0-ray2.54.0"
+      - name: marimo-cpu
+        tag: "marimo-cpu-py313-torch2.8.0-ray2.54.0"
+
+  # CPUのみ + Python 3.14
+  - cuda_version: null
+    python_version: "3.14"
+    cuda_tag: "cpu"
+    ray_version: "3.0.0.dev0"
+    targets:
+      - name: simple-cpu
+        tag: "simple-cpu-py314-torch2.9.0"
+      - name: ray-cpu
+        tag: "ray-cpu-py314-torch2.9.0-ray3.0.0.dev0"
+      - name: marimo-cpu
+        tag: "marimo-cpu-py314-torch2.9.0-ray3.0.0.dev0"
+
   # CUDA 12.x系 + Python 3.13
   - cuda_version: "12.8.1"
     python_version: "3.13"
