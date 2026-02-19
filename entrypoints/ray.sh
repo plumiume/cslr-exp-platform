@@ -19,6 +19,32 @@ fi
 RAY_EXEC="ray"
 PYTHON_EXEC="python"
 
+# Install pip requirements from /pip-requirements (file or directory, if present)
+PIP_REQ_DIR="/pip-requirements"
+if [ -f "$PIP_REQ_DIR" ]; then
+    echo "Checking pip requirements in $PIP_REQ_DIR..."
+    echo "  Installing from: $PIP_REQ_DIR"
+    "$PYTHON_EXEC" -m pip install -r "$PIP_REQ_DIR"
+    echo "✓ pip requirements installation done."
+elif [ -d "$PIP_REQ_DIR" ]; then
+    echo "Checking pip requirements in $PIP_REQ_DIR..."
+    req_files=()
+    while IFS= read -r req_file; do
+        req_files+=("$req_file")
+    done < <(find "$PIP_REQ_DIR" -type f -name "*.txt" | sort)
+    if [ "${#req_files[@]}" -eq 0 ]; then
+        echo "  No pip requirement files found, skipping."
+    else
+        for req_file in "${req_files[@]}"; do
+            echo "  Installing from: $req_file"
+            "$PYTHON_EXEC" -m pip install -r "$req_file"
+        done
+        echo "✓ pip requirements installation done."
+    fi
+else
+    echo "  /pip-requirements not found, skipping."
+fi
+
 echo "Starting Ray node..."
 HOSTNAME=$(hostname)
 echo "Hostname: $HOSTNAME"
