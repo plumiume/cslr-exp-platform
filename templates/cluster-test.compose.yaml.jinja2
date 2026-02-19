@@ -12,12 +12,16 @@ x-gpu: &gpu
             count: all
             capabilities: [gpu]
 
+{% set ray_target = cluster_test.target %}
+{% set target_host = "ray-gpu" if ray_target == "gpu" else "ray-cpu" %}
+{% set target_head_port = services.ray.gpu.head_port if ray_target == "gpu" else services.ray.cpu.head_port %}
+{% set target_dashboard_port = services.ray.gpu.dashboard_port if ray_target == "gpu" else services.ray.cpu.dashboard_port %}
+{% set target_client_port = services.ray.gpu.client_port if ray_target == "gpu" else services.ray.cpu.client_port %}
+{% set cpu_head_port = services.ray.cpu.head_port %}
+{% set cpu_dashboard_port = services.ray.cpu.dashboard_port %}
+{% set cpu_client_port = services.ray.cpu.client_port %}
+
 x-ray: &ray
-{% if services.ray.cpu.enabled %}
-  image: {{ services.ray.cpu.image }}
-{% elif services.ray.gpu.enabled %}
-  image: {{ services.ray.gpu.image }}
-{% endif %}
   restart: unless-stopped
 
 services:
@@ -27,8 +31,8 @@ services:
     image: python:3.12-alpine
     container_name: {{ project.name }}-health
     volumes:
-      - ../template/health-ep.sh:/app/health-ep.sh:ro
-    command: ["python3", "/app/health-ep.sh"]
+      - ../entrypoints/health.sh:/app/health.sh:ro
+    command: ["python3", "/app/health.sh"]
     ports:
       - "0.0.0.0:{{ services.health.port }}:8080"
     healthcheck:
@@ -53,6 +57,21 @@ services:
       - RAY_HEAD_PORT={{ services.ray.cpu.head_port }}
       - RAY_DASHBOARD_PORT={{ services.ray.cpu.dashboard_port }}
       - RAY_CLIENT_PORT={{ services.ray.cpu.client_port }}
+    {% if services.ray.cpu.node_ip_address %}
+      - NODE_IP_ADDRESS={{ services.ray.cpu.node_ip_address }}
+    {% endif %}
+    {% if services.ray.cpu.node_manager_port %}
+      - NODE_MANAGER_PORT={{ services.ray.cpu.node_manager_port }}
+    {% endif %}
+    {% if services.ray.cpu.object_manager_port %}
+      - OBJECT_MANAGER_PORT={{ services.ray.cpu.object_manager_port }}
+    {% endif %}
+    {% if services.ray.cpu.min_worker_port %}
+      - MIN_WORKER_PORT={{ services.ray.cpu.min_worker_port }}
+    {% endif %}
+    {% if services.ray.cpu.max_worker_port %}
+      - MAX_WORKER_PORT={{ services.ray.cpu.max_worker_port }}
+    {% endif %}
       - HEAD_WHITELIST={{ nodes.head_whitelist | join(' ') }}
       - HEAD_ADDRESS_CFG={{ nodes.head_address or '' }}
       - HEALTH_URL={{ nodes.health_service.url }}
@@ -61,12 +80,15 @@ services:
       - HEALTH_RETRY_INTERVAL={{ nodes.health_service.retry_interval }}
       - DISCOVERY_TIMEOUT={{ nodes.cluster.discovery_timeout }}
       - WAIT_FOR_HEAD={{ nodes.cluster.wait_for_head }}
+{% if services.ray.cpu.cpus %}
       - RAY_NUM_CPUS={{ services.ray.cpu.cpus }}
+{% endif %}
       - USE_CONDA_ENV=1
     volumes:
-      - ../template/ray-ep.sh:/app/ray-ep.sh:ro
+      - ../entrypoints/ray.sh:/app/ray.sh:ro
+      - ../_build/logs/ray-cpu/tmp-ray:/tmp/ray
     user: root
-    entrypoint: ["/bin/bash", "-c", "/app/ray-ep.sh"]
+    entrypoint: ["/bin/bash", "-c", "/app/ray.sh"]
 {% if services.health.enabled %}
     depends_on:
       health:
@@ -103,6 +125,21 @@ services:
       - RAY_HEAD_PORT={{ services.ray.gpu.head_port }}
       - RAY_DASHBOARD_PORT={{ services.ray.gpu.dashboard_port }}
       - RAY_CLIENT_PORT={{ services.ray.gpu.client_port }}
+    {% if services.ray.gpu.node_ip_address %}
+      - NODE_IP_ADDRESS={{ services.ray.gpu.node_ip_address }}
+    {% endif %}
+    {% if services.ray.gpu.node_manager_port %}
+      - NODE_MANAGER_PORT={{ services.ray.gpu.node_manager_port }}
+    {% endif %}
+    {% if services.ray.gpu.object_manager_port %}
+      - OBJECT_MANAGER_PORT={{ services.ray.gpu.object_manager_port }}
+    {% endif %}
+    {% if services.ray.gpu.min_worker_port %}
+      - MIN_WORKER_PORT={{ services.ray.gpu.min_worker_port }}
+    {% endif %}
+    {% if services.ray.gpu.max_worker_port %}
+      - MAX_WORKER_PORT={{ services.ray.gpu.max_worker_port }}
+    {% endif %}
       - HEAD_WHITELIST={{ nodes.head_whitelist | join(' ') }}
       - HEAD_ADDRESS_CFG={{ nodes.head_address or '' }}
       - HEALTH_URL={{ nodes.health_service.url }}
@@ -112,12 +149,15 @@ services:
       - DISCOVERY_TIMEOUT={{ nodes.cluster.discovery_timeout }}
       - WAIT_FOR_HEAD={{ nodes.cluster.wait_for_head }}
       - RAY_NUM_GPUS=1
+{% if services.ray.gpu.cpus %}
       - RAY_NUM_CPUS={{ services.ray.gpu.cpus }}
+{% endif %}
       - USE_CONDA_ENV=1
     volumes:
-      - ../template/ray-ep.sh:/app/ray-ep.sh:ro
+      - ../entrypoints/ray.sh:/app/ray.sh:ro
+      - ../_build/logs/ray-gpu/tmp-ray:/tmp/ray
     user: root
-    entrypoint: ["/bin/bash", "-c", "/app/ray-ep.sh"]
+    entrypoint: ["/bin/bash", "-c", "/app/ray.sh"]
 {% if services.health.enabled %}
     depends_on:
       health:
@@ -150,18 +190,19 @@ services:
   # Test containers - Network isolated
   test-ray-client:
     <<: *ray
+    image: {% if ray_target == "gpu" %}{{ services.ray.gpu.image }}{% else %}{{ services.ray.cpu.image }}{% endif %}
     container_name: {{ project.name }}-test-client
     hostname: test-ray-client
     restart: "no"
     shm_size: '1gb'
     extra_hosts:
-      - "ray-cpu:{{ host.ip_address }}"
-      - "ray-gpu:{{ host.ip_address }}"
+      - "{{ target_host }}:{{ host.ip_address }}"
       - "health:{{ host.ip_address }}"
     environment:
-      - RAY_HEAD_PORT={{ services.ray.cpu.head_port }}
-      - RAY_DASHBOARD_PORT={{ services.ray.cpu.dashboard_port }}
-      - RAY_CLIENT_PORT={{ services.ray.cpu.client_port }}
+      - RAY_HEAD_PORT={{ target_head_port }}
+      - RAY_DASHBOARD_PORT={{ target_dashboard_port }}
+      - RAY_CLIENT_PORT={{ target_client_port }}
+      - TEST_PYTHON_EXEC=${TEST_PYTHON_EXEC:-python}
       - HEAD_WHITELIST={{ nodes.head_whitelist | join(' ') }}
       - HEAD_ADDRESS_CFG={{ nodes.head_address or '' }}
       - HEALTH_URL={{ nodes.health_service.url }}
@@ -170,7 +211,8 @@ services:
       - WAIT_FOR_HEAD={{ nodes.cluster.wait_for_head }}
       - RAY_NUM_CPUS=1
     volumes:
-      - ../template/ray-ep.sh:/app/ray-ep.sh:ro
+      - ../entrypoints/ray.sh:/app/ray.sh:ro
+      - ../_build/logs/test-client/tmp-ray:/tmp/ray
     user: root
     entrypoint: ["/bin/bash", "-c"]
     command:
@@ -180,26 +222,27 @@ services:
         echo "Testing connectivity to main cluster..."
         
         # DNS/Network connectivity test
-        ping -c 2 ray-cpu || echo "⚠ Cannot ping ray-cpu"
-        {% if host.has_gpu and services.ray.gpu.enabled %}
-        ping -c 2 ray-gpu || echo "⚠ Cannot ping ray-gpu"
-        {% endif %}
+        ping -c 2 {{ target_host }} || echo "⚠ Cannot ping {{ target_host }}"
+      {% if services.health.enabled %}
         ping -c 2 health || echo "⚠ Cannot ping health"
+      {% endif %}
         
         # Port connectivity test
-        timeout 2 bash -c "</dev/tcp/ray-cpu/{{ services.ray.cpu.head_port }}" && echo "✓ ray-cpu:{{ services.ray.cpu.head_port }} reachable" || echo "✗ ray-cpu:{{ services.ray.cpu.head_port }} unreachable"
-        timeout 2 bash -c "</dev/tcp/health/8080" && echo "✓ health:8080 reachable" || echo "✗ health:8080 unreachable"
+        timeout 2 bash -c "</dev/tcp/{{ target_host }}/{{ target_head_port }}" && echo "✓ {{ target_host }}:{{ target_head_port }} reachable" || echo "✗ {{ target_host }}:{{ target_head_port }} unreachable"
+        {% if services.health.enabled %}
+          timeout 2 bash -c "</dev/tcp/health/{{ services.health.port }}" && echo "✓ health:{{ services.health.port }} reachable" || echo "✗ health:{{ services.health.port }} unreachable"
+        {% endif %}
         
         # Ray client connection test
         echo ""
         echo "Testing Ray client connection..."
-        su - ray -c "python3 -c 'import ray; ray.init(\"ray://{{ host.ip_address }}:{{ services.ray.cpu.client_port }}\", ignore_reinit_error=True); print(\"✓ Ray client connected\"); print(\"Resources:\", ray.cluster_resources()); ray.shutdown()' || echo '✗ Ray client connection failed'"
+        su - ray -c "$TEST_PYTHON_EXEC -c 'import ray; ray.init(\"ray://{{ host.ip_address }}:{{ target_client_port }}\", ignore_reinit_error=True); print(\"✓ Ray client connected\"); print(\"Resources:\", ray.cluster_resources()); ray.shutdown()' || echo '✗ Ray client connection failed'"
         
         echo ""
         echo "Test client container will sleep for debugging..."
         tail -f /dev/null
     depends_on:
-      - ray-cpu
+      - {{ target_host }}
 {% if services.health.enabled %}
       - health
 {% endif %}
@@ -208,18 +251,23 @@ services:
 
   test-ray-worker:
     <<: *ray
+    image: {% if ray_target == "gpu" %}{{ services.ray.gpu.image }}{% else %}{{ services.ray.cpu.image }}{% endif %}
     container_name: {{ project.name }}-test-worker
     hostname: test-ray-worker
     restart: "no"
     shm_size: '1gb'
     extra_hosts:
-      - "ray-cpu:{{ host.ip_address }}"
-      - "ray-gpu:{{ host.ip_address }}"
+      - "{{ target_host }}:{{ host.ip_address }}"
       - "health:{{ host.ip_address }}"
     environment:
-      - RAY_HEAD_PORT={{ services.ray.cpu.head_port }}
-      - RAY_DASHBOARD_PORT={{ services.ray.cpu.dashboard_port }}
-      - RAY_CLIENT_PORT={{ services.ray.cpu.client_port }}
+      - RAY_HEAD_PORT={{ target_head_port }}
+      - RAY_DASHBOARD_PORT={{ target_dashboard_port }}
+      - RAY_CLIENT_PORT={{ target_client_port }}
+      - NODE_IP_ADDRESS={{ host.ip_address }}
+      - NODE_MANAGER_PORT={{ cluster_test.worker_node_manager_port }}
+      - OBJECT_MANAGER_PORT={{ cluster_test.worker_object_manager_port }}
+      - MIN_WORKER_PORT={{ cluster_test.worker_min_worker_port }}
+      - MAX_WORKER_PORT={{ cluster_test.worker_max_worker_port }}
       - HEAD_WHITELIST={{ nodes.head_whitelist | join(' ') }}
       - HEAD_ADDRESS_CFG={{ nodes.head_address or '' }}
       - HEALTH_URL={{ nodes.health_service.url }}
@@ -227,9 +275,10 @@ services:
       - DISCOVERY_TIMEOUT={{ nodes.cluster.discovery_timeout }}
       - WAIT_FOR_HEAD={{ nodes.cluster.wait_for_head }}
       - RAY_NUM_CPUS=2
-      - HEAD_ADDRESS=ray-cpu:{{ services.ray.cpu.head_port }}
+      - HEAD_ADDRESS={{ target_host }}:{{ target_head_port }}
     volumes:
-      - ../template/ray-ep.sh:/app/ray-ep.sh:ro
+      - ../entrypoints/ray.sh:/app/ray.sh:ro
+      - ../_build/logs/test-worker/tmp-ray:/tmp/ray
     user: root
     entrypoint: ["/bin/bash", "-c"]
     command:
@@ -239,28 +288,93 @@ services:
         echo "Testing connectivity to main cluster..."
         
         # Network connectivity test
-        ping -c 2 ray-cpu || echo "⚠ Cannot ping ray-cpu"
-        timeout 2 bash -c "</dev/tcp/ray-cpu/{{ services.ray.cpu.head_port }}" && echo "✓ ray-cpu:{{ services.ray.cpu.head_port }} reachable" || echo "✗ ray-cpu:{{ services.ray.cpu.head_port }} unreachable"
-        timeout 2 bash -c "</dev/tcp/health/8080" && echo "✓ health:8080 reachable" || echo "✗ health:8080 unreachable"
+        ping -c 2 {{ target_host }} ||  echo "⚠ Cannot ping {{ target_host }}"
+        timeout 2 bash -c "</dev/tcp/{{ target_host }}/{{ target_head_port }}" && echo "✓ {{ target_host }}:{{ target_head_port }} reachable" || echo "✗ {{ target_host }}:{{ target_head_port }} unreachable"
+        {% if services.health.enabled %}
+          timeout 2 bash -c "</dev/tcp/health/{{ services.health.port }}" && echo "✓ health:{{ services.health.port }} reachable" || echo "✗ health:{{ services.health.port }} unreachable"
+        {% endif %}
         
-        # Verify ray-ep.sh compatibility (should start as worker)
+        # Verify ray.sh compatibility (should start as worker)
         echo ""
-        echo "Starting Ray worker node using ray-ep.sh..."
+        echo "Starting Ray worker node using ray.sh..."
         echo "This node is NOT in whitelist, so should start as WORKER automatically"
         
         export USE_CONDA_ENV=1
-        /app/ray-ep.sh
+        /app/ray.sh
+    depends_on:
+      - {{ target_host }}
+{% if services.health.enabled %}
+      - health
+{% endif %}
+    ports:
+      - "{{ cluster_test.worker_node_manager_port }}:{{ cluster_test.worker_node_manager_port }}"
+      - "{{ cluster_test.worker_object_manager_port }}:{{ cluster_test.worker_object_manager_port }}"
+      - "{{ cluster_test.worker_min_worker_port }}-{{ cluster_test.worker_max_worker_port }}:{{ cluster_test.worker_min_worker_port }}-{{ cluster_test.worker_max_worker_port }}"
+    networks:
+      - test-network
+
+{% if ray_target == "gpu" and services.ray.cpu.enabled %}
+  test-ray-worker-cpu:
+    <<: *ray
+    image: {{ services.ray.cpu.image }}
+    container_name: {{ project.name }}-test-worker-cpu
+    hostname: test-ray-worker-cpu
+    restart: "no"
+    shm_size: '1gb'
+    extra_hosts:
+      - "ray-cpu:{{ host.ip_address }}"
+      - "health:{{ host.ip_address }}"
+    environment:
+      - RAY_HEAD_PORT={{ cpu_head_port }}
+      - RAY_DASHBOARD_PORT={{ cpu_dashboard_port }}
+      - RAY_CLIENT_PORT={{ cpu_client_port }}
+      - NODE_IP_ADDRESS={{ host.ip_address }}
+      - NODE_MANAGER_PORT={{ cluster_test.worker_cpu_node_manager_port }}
+      - OBJECT_MANAGER_PORT={{ cluster_test.worker_cpu_object_manager_port }}
+      - MIN_WORKER_PORT={{ cluster_test.worker_cpu_min_worker_port }}
+      - MAX_WORKER_PORT={{ cluster_test.worker_cpu_max_worker_port }}
+      - HEAD_WHITELIST={{ nodes.head_whitelist | join(' ') }}
+      - HEAD_ADDRESS_CFG={{ nodes.head_address or '' }}
+      - HEALTH_URL={{ nodes.health_service.url }}
+      - HEALTH_TIMEOUT={{ nodes.health_service.timeout }}
+      - DISCOVERY_TIMEOUT={{ nodes.cluster.discovery_timeout }}
+      - WAIT_FOR_HEAD={{ nodes.cluster.wait_for_head }}
+      - RAY_NUM_CPUS=2
+      - HEAD_ADDRESS=ray-cpu:{{ cpu_head_port }}
+    volumes:
+      - ../entrypoints/ray.sh:/app/ray.sh:ro
+      - ../_build/logs/test-worker-cpu/tmp-ray:/tmp/ray
+    user: root
+    entrypoint: ["/bin/bash", "-c"]
+    command:
+      - |
+        apt-get update -qq && apt-get install -y -qq curl iputils-ping > /dev/null 2>&1
+        echo "=== Test Ray Worker (CPU Head) Network Test ==="
+        echo "Testing connectivity to CPU head..."
+
+        ping -c 2 ray-cpu ||  echo "⚠ Cannot ping ray-cpu"
+        timeout 2 bash -c "</dev/tcp/ray-cpu/{{ cpu_head_port }}" && echo "✓ ray-cpu:{{ cpu_head_port }} reachable" || echo "✗ ray-cpu:{{ cpu_head_port }} unreachable"
+        {% if services.health.enabled %}
+          timeout 2 bash -c "</dev/tcp/health/{{ services.health.port }}" && echo "✓ health:{{ services.health.port }} reachable" || echo "✗ health:{{ services.health.port }} unreachable"
+        {% endif %}
+
+        echo ""
+        echo "Starting CPU-head validation worker using ray.sh..."
+
+        export USE_CONDA_ENV=1
+        /app/ray.sh
     depends_on:
       - ray-cpu
 {% if services.health.enabled %}
       - health
 {% endif %}
-    deploy:
-      resources:
-        limits:
-          memory: 2g
+    ports:
+      - "{{ cluster_test.worker_cpu_node_manager_port }}:{{ cluster_test.worker_cpu_node_manager_port }}"
+      - "{{ cluster_test.worker_cpu_object_manager_port }}:{{ cluster_test.worker_cpu_object_manager_port }}"
+      - "{{ cluster_test.worker_cpu_min_worker_port }}-{{ cluster_test.worker_cpu_max_worker_port }}:{{ cluster_test.worker_cpu_min_worker_port }}-{{ cluster_test.worker_cpu_max_worker_port }}"
     networks:
       - test-network
+{% endif %}
 
 networks:
   ray-network:
@@ -274,4 +388,9 @@ networks:
     driver: bridge
     ipam:
       config:
-        - subnet: 172.30.0.0/24
+        - subnet: {{ cluster_test.test_network_subnet }}
+
+volumes:
+  mlflow_data:
+  postgres_data:
+  ray_data:

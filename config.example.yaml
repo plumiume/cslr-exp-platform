@@ -32,6 +32,18 @@ volumes:
   mlflow_data: ./data/mlflow
   postgres_data: ./data/postgres
 
+cluster_test:
+  target: cpu  # cpu / gpu
+  test_network_subnet: 172.30.0.0/24
+  worker_node_manager_port: 30000
+  worker_object_manager_port: 30001
+  worker_min_worker_port: 30010
+  worker_max_worker_port: 30020
+  worker_cpu_node_manager_port: 30100
+  worker_cpu_object_manager_port: 30101
+  worker_cpu_min_worker_port: 30110
+  worker_cpu_max_worker_port: 30120
+
 services:
   # ヘルスチェック用サービス
   health:
@@ -40,7 +52,9 @@ services:
 
   # Ray クラスター設定
   ray:
-    # 共通設定: CPU/GPU ノードの両方に適用
+    # 共通設定（フォールバック）: cpu.image / gpu.image が未指定の場合に適用
+    # 運用では cpu.image / gpu.image の個別指定を推奨
+    # CPU/GPU の同時起動は cluster_test（検証用途）に限定
     # 公式イメージを使用する場合
     # image: rayproject/ray:latest
     # カスタムイメージをビルドする場合
@@ -59,6 +73,11 @@ services:
       head_port: 6379
       dashboard_port: 8265
       client_port: 20001
+      # node_ip_address: null
+      # node_manager_port: 30000
+      # object_manager_port: 30001
+      # min_worker_port: 30010
+      # max_worker_port: 30020
 
     # GPU ヘッドノード
     gpu:
@@ -68,6 +87,11 @@ services:
       head_port: 6380
       dashboard_port: 8266
       client_port: 20002
+      # node_ip_address: null
+      # node_manager_port: 31000
+      # object_manager_port: 31001
+      # min_worker_port: 31010
+      # max_worker_port: 31020
 
   # Redis サービス
   redis:

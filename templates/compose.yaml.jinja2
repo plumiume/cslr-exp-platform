@@ -38,8 +38,8 @@ services:
     image: python:3.12-alpine
     container_name: {{ project.name }}-health
     volumes:
-      - ../template/health-ep.sh:/app/health-ep.sh:ro
-    command: ["python3", "/app/health-ep.sh"]
+      - ../entrypoints/health.sh:/app/health.sh:ro
+    command: ["python3", "/app/health.sh"]
     ports:
       - "0.0.0.0:{{ services.health.port }}:8080"
     healthcheck:
@@ -70,6 +70,21 @@ services:
       - RAY_HEAD_PORT={{ services.ray.cpu.head_port }}
       - RAY_DASHBOARD_PORT={{ services.ray.cpu.dashboard_port }}
       - RAY_CLIENT_PORT={{ services.ray.cpu.client_port }}
+    {% if services.ray.cpu.node_ip_address %}
+      - NODE_IP_ADDRESS={{ services.ray.cpu.node_ip_address }}
+    {% endif %}
+    {% if services.ray.cpu.node_manager_port %}
+      - NODE_MANAGER_PORT={{ services.ray.cpu.node_manager_port }}
+    {% endif %}
+    {% if services.ray.cpu.object_manager_port %}
+      - OBJECT_MANAGER_PORT={{ services.ray.cpu.object_manager_port }}
+    {% endif %}
+    {% if services.ray.cpu.min_worker_port %}
+      - MIN_WORKER_PORT={{ services.ray.cpu.min_worker_port }}
+    {% endif %}
+    {% if services.ray.cpu.max_worker_port %}
+      - MAX_WORKER_PORT={{ services.ray.cpu.max_worker_port }}
+    {% endif %}
       - HEAD_WHITELIST={{ nodes.head_whitelist | join(' ') }}
       - HEAD_ADDRESS_CFG={{ nodes.head_address or '' }}
       - HEALTH_URL={{ nodes.health_service.url }}
@@ -80,19 +95,17 @@ services:
       - WAIT_FOR_HEAD={{ nodes.cluster.wait_for_head }}
 {% if services.ray.cpu.cpus %}
       - RAY_NUM_CPUS={{ services.ray.cpu.cpus }}
-{% else %}
-      - RAY_NUM_CPUS=4
 {% endif %}
 {% if services.ray.cpu.build and services.ray.cpu.build.enabled %}
       - USE_CONDA_ENV=1
 {% endif %}
     volumes:
-      - ../template/ray-ep.sh:/app/ray-ep.sh:ro
+      - ../entrypoints/ray.sh:/app/ray.sh:ro
     user: root
 {% if services.ray.cpu.build and services.ray.cpu.build.enabled %}
-    entrypoint: ["/bin/bash", "-c", "/app/ray-ep.sh"]
+    entrypoint: ["/bin/bash", "-c", "/app/ray.sh"]
 {% else %}
-    entrypoint: ["/bin/bash", "-c", "su - ray -c '/app/ray-ep.sh'"]
+    entrypoint: ["/bin/bash", "-c", "su - ray -c '/app/ray.sh'"]
 {% endif %}
 {% if services.health.enabled %}
     depends_on:
@@ -114,6 +127,8 @@ services:
       - "{{ services.ray.cpu.dashboard_port }}:{{ services.ray.cpu.dashboard_port }}"  # Ray Dashboard
       - "{{ services.ray.cpu.client_port }}:{{ services.ray.cpu.client_port }}"  # Ray Client
       - "{{ services.ray.cpu.head_port }}:{{ services.ray.cpu.head_port }}"  # Head process
+    profiles:
+      - ray-cpu
 {% endif %}
 
 {% if host.has_gpu and services.ray.gpu.enabled %}
@@ -134,6 +149,21 @@ services:
       - RAY_HEAD_PORT={{ services.ray.gpu.head_port }}
       - RAY_DASHBOARD_PORT={{ services.ray.gpu.dashboard_port }}
       - RAY_CLIENT_PORT={{ services.ray.gpu.client_port }}
+    {% if services.ray.gpu.node_ip_address %}
+      - NODE_IP_ADDRESS={{ services.ray.gpu.node_ip_address }}
+    {% endif %}
+    {% if services.ray.gpu.node_manager_port %}
+      - NODE_MANAGER_PORT={{ services.ray.gpu.node_manager_port }}
+    {% endif %}
+    {% if services.ray.gpu.object_manager_port %}
+      - OBJECT_MANAGER_PORT={{ services.ray.gpu.object_manager_port }}
+    {% endif %}
+    {% if services.ray.gpu.min_worker_port %}
+      - MIN_WORKER_PORT={{ services.ray.gpu.min_worker_port }}
+    {% endif %}
+    {% if services.ray.gpu.max_worker_port %}
+      - MAX_WORKER_PORT={{ services.ray.gpu.max_worker_port }}
+    {% endif %}
       - HEAD_WHITELIST={{ nodes.head_whitelist | join(' ') }}
       - HEAD_ADDRESS_CFG={{ nodes.head_address or '' }}
       - HEALTH_URL={{ nodes.health_service.url }}
@@ -145,19 +175,17 @@ services:
       - RAY_NUM_GPUS=1
 {% if services.ray.gpu.cpus %}
       - RAY_NUM_CPUS={{ services.ray.gpu.cpus }}
-{% else %}
-      - RAY_NUM_CPUS=4
 {% endif %}
 {% if services.ray.gpu.build and services.ray.gpu.build.enabled %}
       - USE_CONDA_ENV=1
 {% endif %}
     volumes:
-      - ../template/ray-ep.sh:/app/ray-ep.sh:ro
+      - ../entrypoints/ray.sh:/app/ray.sh:ro
     user: root
 {% if services.ray.gpu.build and services.ray.gpu.build.enabled %}
-    entrypoint: ["/bin/bash", "-c", "/app/ray-ep.sh"]
+    entrypoint: ["/bin/bash", "-c", "/app/ray.sh"]
 {% else %}
-    entrypoint: ["/bin/bash", "-c", "su - ray -c '/app/ray-ep.sh'"]
+    entrypoint: ["/bin/bash", "-c", "su - ray -c '/app/ray.sh'"]
 {% endif %}
 {% if services.ray.cpu.enabled or services.health.enabled %}
     depends_on:
@@ -190,6 +218,8 @@ services:
       - "{{ services.ray.gpu.dashboard_port }}:{{ services.ray.gpu.dashboard_port }}"  # Ray Dashboard
       - "{{ services.ray.gpu.client_port }}:{{ services.ray.gpu.client_port }}"  # Ray Client
       - "{{ services.ray.gpu.head_port }}:{{ services.ray.gpu.head_port }}"  # Head process
+    profiles:
+      - ray-gpu
 {% endif %}
 
 {% if services.redis.enabled %}

@@ -112,6 +112,20 @@ command: ray start --head --dashboard-host=0.0.0.0 --redis-password=ray --num-gp
      - "8080:8080"  # Prometheusメトリクス
    ```
 
+4. **ネットワーク分離/NAT 環境向け（重要）**
+   ```yaml
+   command: ray start --address=<head-host>:6379 \
+     --node-ip-address=<reachable-host-ip> \
+     --node-manager-port=30000 \
+     --object-manager-port=30001 \
+     --min-worker-port=30010 \
+     --max-worker-port=30020
+   ports:
+     - "30000:30000"
+     - "30001:30001"
+     - "30010-30020:30010-30020"
+   ```
+
 ### 接続方法
 
 #### Python内から接続

@@ -22,6 +22,18 @@
 - `tools/build_matrix.py`: マトリックス実行スクリプト
 - `Dockerfile`: マルチステージビルド定義
 
+## イメージタグ戦略（運用ルール）
+
+- タグのソース・オブ・トゥルースは `build-matrix.yaml` です。
+- 実際のイメージ名は `build_options.image_prefix` と各ターゲットの `tag` を連結して決まります。
+  - 現行値: `plumiiume/cslr-exp-platform`
+- 手動 `docker build` 時も、`build-matrix.yaml` に定義した `tag` と同じ値を使ってください。
+- 現行の推奨フォーマット:
+  - `simple-devel-cu128-py313-torch2.8.0`
+  - `simple-runtime-cu128-py313-torch2.8.0`
+  - `ray-runtime-cu128-py313-torch2.8.0`
+  - `marimo-runtime-cu128-py313-torch2.8.0`
+
 ## 使用方法
 
 ### 1. 最小構成でテスト（推奨）
@@ -84,7 +96,7 @@ docker build \
   --build-arg CUDA_VERSION=12.8.1 \
   --build-arg PYTHON_VERSION=3.13 \
   --build-arg CUDA_TAG=cu128 \
-  -t plumiume/cslr-exp-platform:marimo-torch2.8.0-cu128-py313-runtime \
+  -t plumiiume/cslr-exp-platform:marimo-runtime-cu128-py313-torch2.8.0 \
   --platform linux/amd64 \
   .
 ```
@@ -97,7 +109,7 @@ docker build \
   --build-arg CUDA_VERSION=13.1.1 \
   --build-arg PYTHON_VERSION=3.14 \
   --build-arg CUDA_TAG=cu130 \
-  -t plumiume/cslr-exp-platform:marimo-torch2.9.0-cu130-py314-runtime \
+  -t plumiiume/cslr-exp-platform:marimo-runtime-cu130-py314-torch2.9.0 \
   --platform linux/amd64 \
   .
 ```
@@ -110,7 +122,7 @@ docker build \
   --build-arg CUDA_VERSION=12.8.1 \
   --build-arg PYTHON_VERSION=3.13 \
   --build-arg CUDA_TAG=cu128 \
-  -t plumiume/cslr-exp-platform:devel-torch2.8.0-cu128-py313 \
+  -t plumiiume/cslr-exp-platform:simple-devel-cu128-py313-torch2.8.0 \
   --platform linux/amd64 \
   .
 ```
@@ -126,7 +138,7 @@ matrix:
     cuda_tag: "cu128"
     targets:
       - name: "marimo-runtime"
-        tag: "marimo-torch2.8.0-cu128-py313-runtime"
+        tag: "marimo-runtime-cu128-py313-torch2.8.0"
 ```
 
 ## ビルド時間の目安

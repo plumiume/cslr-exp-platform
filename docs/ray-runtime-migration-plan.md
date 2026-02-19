@@ -137,7 +137,7 @@ environment:
   
 # userとentrypointの調整
 user: "1000:1000"  # conda環境は一般ユーザーで実行可能
-entrypoint: ["/bin/bash", "-c", "/app/ray-ep.sh"]
+entrypoint: ["/bin/bash", "-c", "/app/ray.sh"]
 ```
 
 ### 7. marimoサービスの更新

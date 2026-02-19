@@ -8,7 +8,7 @@ import json
 import subprocess
 import sys
 from pathlib import Path
-from typing import Annotated, Optional
+from typing import Annotated, Literal, Optional
 
 import typer
 from rich.console import Console
@@ -43,12 +43,42 @@ def up(
     remove_orphans: Annotated[
         bool, typer.Option("--remove-orphans", help="Remove orphan containers")
     ] = False,
+    profile: Annotated[
+        Optional[str], typer.Option("--profile", help="Docker Compose profile to use")
+    ] = None,
     services: Annotated[
         Optional[list[str]], typer.Argument(help="Services to start")
     ] = None,
 ):
     """Start services with docker compose up"""
-    compose_args = ["up"]
+    project_root = Path(__file__).parent.parent.resolve()
+    manager = WorkspaceManager(project_root)
+
+    # Auto-select profile for ray services if not specified
+    if profile is None:
+        config = manager.load_config()
+        config = manager.detect_host_state(config)
+
+        if services:
+            selected_services = set(services)
+            if {"ray-cpu", "ray-gpu"}.issubset(selected_services):
+                console.print(
+                    "[red]Error:[/red] ray-cpu と ray-gpu の同時起動は "
+                    "ws test でのみ許可されています。"
+                )
+                raise typer.Exit(1)
+
+        # Select ray-gpu if GPU is available and enabled, otherwise ray-cpu
+        if config.host.has_gpu and config.services.ray.gpu.enabled:
+            profile = "ray-gpu"
+        elif config.services.ray.cpu.enabled:
+            profile = "ray-cpu"
+
+    compose_args = []
+    if profile:
+        compose_args.extend(["--profile", profile])
+
+    compose_args.append("up")
 
     if detach:
         compose_args.append("-d")
@@ -60,8 +90,6 @@ def up(
     if services:
         compose_args.extend(services)
 
-    project_root = Path(__file__).parent.parent.resolve()
-    manager = WorkspaceManager(project_root)
     sys.exit(manager.run_docker_compose(compose_args))
 
 
@@ -393,11 +421,29 @@ def test(
     logs: Annotated[
         bool, typer.Option("--logs", help="Show test container logs")
     ] = False,
+    collect_logs: Annotated[
+        bool,
+        typer.Option(
+            "--collect-logs",
+            help="Start test, wait duration, then collect all logs",
+        ),
+    ] = False,
+    duration: Annotated[
+        int,
+        typer.Option(
+            "--duration",
+            help="Log collection duration in minutes (with --collect-logs)",
+        ),
+    ] = 10,
     head: Annotated[
         Optional[str],
         typer.Option(
             "--head", help="Explicit head address (host:port) for worker nodes"
         ),
+    ] = None,
+    target: Annotated[
+        Optional[Literal["cpu", "gpu"]],
+        typer.Option("--target", help="Cluster test target node"),
     ] = None,
 ):
     """Run cluster connectivity tests with isolated test containers"""
@@ -406,7 +452,7 @@ def test(
 
     try:
         # Generate test compose file
-        manager.generate_cluster_test_file()
+        manager.generate_cluster_test_file(target=target)
 
         # Build environment with optional HEAD_ADDRESS
         env = None
@@ -417,6 +463,15 @@ def test(
             env["HEAD_ADDRESS"] = head
 
         test_cwd = manager.test_output_path.parent
+
+        if collect_logs:
+            log_dir = manager.collect_cluster_test_logs(
+                duration_minutes=duration,
+                target=target,
+                env=env,
+            )
+            console.print(f"\n[dim]Logs saved to: {log_dir}[/dim]")
+            return
 
         if down:
             cmd = [
@@ -465,6 +520,7 @@ def test(
         console.print("  --up      Start test containers")
         console.print("  --down    Stop test containers")
         console.print("  --logs    Show test container logs")
+        console.print("  --collect-logs  Start, wait --duration min, collect all logs")
 
     except Exception as e:
         console.print(f"[red]Error: {e}[/red]")

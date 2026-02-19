@@ -264,11 +264,11 @@ nodes:
    ```bash
    docker compose -f _build/compose.yaml run --rm ray-cpu /bin/bash
    # コンテナ内で
-   /template/ray-ep.sh
+  /entrypoints/ray.sh
    ```
 
 **よくある原因**:
-- `ray-ep.sh` のパーミッション問題 → `chmod +x template/ray-ep.sh`
+- `ray.sh` のパーミッション問題 → `chmod +x entrypoints/ray.sh`
 - 環境変数が正しく注入されていない → `docker inspect` で確認
 - ヘルスチェックサービスが応答しない → `curl http://health:8080` をコンテナ内から実行
 
@@ -492,7 +492,7 @@ Ray の Global Control Service (GCS) に接続できない。
 
 **解決方法**:
 
-- **ノード IP の問題**: Ray は自動的にコンテナの IP を検出します。`--node-ip-address` は指定しないでください。
+- **ノード IP の問題**: 単一ネットワークでは自動検出で動作しますが、ネットワーク分離/NAT 環境では `--node-ip-address` で到達可能な IP を指定してください。
 
 - **GCS の再起動**:
   ```bash
@@ -905,7 +905,7 @@ env | grep RAY
 env | grep HEAD
 
 # エントリポイントを手動実行
-bash -x /template/ray-ep.sh  # デバッグモード
+bash -x /entrypoints/ray.sh  # デバッグモード
 ```
 
 ### ネットワークデバッグツール

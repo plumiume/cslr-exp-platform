@@ -6,7 +6,7 @@ Configuration models for workspace management.
 
 import ipaddress
 import re
-from typing import Any, Optional, Tuple, Type
+from typing import Literal, Optional, Tuple, Type
 from pydantic import BaseModel, Field, field_validator, model_validator
 from pydantic_settings import (
     BaseSettings,
@@ -24,7 +24,10 @@ class HostConfig(BaseModel):
 
     has_gpu: bool = Field(default=False, description="GPU availability")
     gpu_type: Optional[str] = Field(default=None, description="GPU type (nvidia, amd)")
-    hostname: str = Field(default="localhost", description="Hostname")
+    hostname: str = Field(
+        default="localhost",
+        description="Hostname (future/reserved for host-name based access)",
+    )
     ip_address: Optional[str] = Field(
         default=None, description="Host IP address (non-loopback)"
     )
@@ -77,6 +80,44 @@ class RayNodeConfig(BaseModel):
     dashboard_port: int = Field(ge=1024, le=65535, description="Ray Dashboard port")
     client_port: int = Field(ge=1024, le=65535, description="Ray Client port")
     head_port: int = Field(ge=1024, le=65535, description="Head Ray process port")
+    node_ip_address: Optional[str] = Field(
+        default=None,
+        description=(
+            "Advertised node IP address for Ray internal communication "
+            "(required in isolated/NAT environments)"
+        ),
+    )
+    node_manager_port: Optional[int] = Field(
+        default=None,
+        ge=1024,
+        le=65535,
+        description="Fixed NodeManager port",
+    )
+    object_manager_port: Optional[int] = Field(
+        default=None,
+        ge=1024,
+        le=65535,
+        description="Fixed ObjectManager port",
+    )
+    min_worker_port: Optional[int] = Field(
+        default=None,
+        ge=1024,
+        le=65535,
+        description="Minimum worker process port",
+    )
+    max_worker_port: Optional[int] = Field(
+        default=None,
+        ge=1024,
+        le=65535,
+        description="Maximum worker process port",
+    )
+    address: Optional[str] = Field(
+        default=None,
+        description=(
+            "Ray cluster address to connect to "
+            "(future/reserved for test-time compatibility)"
+        ),
+    )
 
     @field_validator("memory")
     @classmethod
@@ -93,6 +134,23 @@ class RayNodeConfig(BaseModel):
             raise ValueError("Memory value must be greater than 0")
 
         return v.lower()
+
+    @model_validator(mode="after")
+    def validate_worker_port_range(self) -> "RayNodeConfig":
+        """Validate worker port range consistency"""
+        min_port = self.min_worker_port
+        max_port = self.max_worker_port
+
+        if (min_port is None) != (max_port is None):
+            raise ValueError(
+                "Both min_worker_port and max_worker_port must be set together"
+            )
+        if min_port is not None and max_port is not None and min_port > max_port:
+            raise ValueError(
+                "min_worker_port must be less than or equal to max_worker_port"
+            )
+
+        return self
 
 
 class RayCPUConfig(RayNodeConfig):
@@ -135,7 +193,7 @@ class RayConfig(BaseModel):
     cpu: RayCPUConfig = Field(default_factory=RayCPUConfig)
     gpu: RayGPUConfig = Field(default_factory=RayGPUConfig)
 
-    def model_post_init(self, __context: Any) -> None:
+    def model_post_init(self, __context: dict[str, object]):
         """Propagate shared settings to CPU/GPU configs if not set"""
         # Propagate image
         if self.image:
@@ -224,6 +282,94 @@ class VolumesConfig(BaseModel):
 
     mlflow_data: str = Field(default="./data/mlflow")
     postgres_data: str = Field(default="./data/postgres")
+    ray_data: str = Field(
+        default="./data/ray",
+        description="Future/reserved for Ray data mount options",
+    )
+
+
+class ClusterTestConfig(BaseModel):
+    """Cluster test configuration"""
+
+    target: Literal["cpu", "gpu"] = Field(
+        default="cpu", description="Cluster test target node"
+    )
+    test_network_subnet: str = Field(
+        default="172.30.0.0/24", description="Isolated test network subnet"
+    )
+    worker_node_manager_port: int = Field(
+        default=30000,
+        ge=1024,
+        le=65535,
+        description="Fixed NodeManager port for test worker",
+    )
+    worker_object_manager_port: int = Field(
+        default=30001,
+        ge=1024,
+        le=65535,
+        description="Fixed ObjectManager port for test worker",
+    )
+    worker_min_worker_port: int = Field(
+        default=30010,
+        ge=1024,
+        le=65535,
+        description="Minimum worker process port for test worker",
+    )
+    worker_max_worker_port: int = Field(
+        default=30020,
+        ge=1024,
+        le=65535,
+        description="Maximum worker process port for test worker",
+    )
+    worker_cpu_node_manager_port: int = Field(
+        default=30100,
+        ge=1024,
+        le=65535,
+        description="Fixed NodeManager port for CPU-head test worker",
+    )
+    worker_cpu_object_manager_port: int = Field(
+        default=30101,
+        ge=1024,
+        le=65535,
+        description="Fixed ObjectManager port for CPU-head test worker",
+    )
+    worker_cpu_min_worker_port: int = Field(
+        default=30110,
+        ge=1024,
+        le=65535,
+        description="Minimum worker process port for CPU-head test worker",
+    )
+    worker_cpu_max_worker_port: int = Field(
+        default=30120,
+        ge=1024,
+        le=65535,
+        description="Maximum worker process port for CPU-head test worker",
+    )
+
+    @field_validator("test_network_subnet")
+    @classmethod
+    def validate_test_network_subnet(cls, v: str) -> str:
+        """Validate CIDR notation for test network"""
+        try:
+            ipaddress.ip_network(v)
+        except ValueError as e:
+            raise ValueError(f"Invalid test network subnet CIDR: {e}")
+        return v
+
+    @model_validator(mode="after")
+    def validate_worker_port_range(self) -> "ClusterTestConfig":
+        """Validate cluster test worker port range"""
+        if self.worker_min_worker_port > self.worker_max_worker_port:
+            raise ValueError(
+                "cluster_test.worker_min_worker_port must be less than or equal to "
+                "cluster_test.worker_max_worker_port"
+            )
+        if self.worker_cpu_min_worker_port > self.worker_cpu_max_worker_port:
+            raise ValueError(
+                "cluster_test.worker_cpu_min_worker_port must be less than or equal "
+                "to cluster_test.worker_cpu_max_worker_port"
+            )
+        return self
 
 
 class NodesHealthServiceConfig(BaseModel):
@@ -275,12 +421,34 @@ class Config(BaseSettings):
     network: NetworkConfig = Field(default_factory=NetworkConfig)
     services: ServicesConfig = Field(default_factory=ServicesConfig)
     volumes: VolumesConfig = Field(default_factory=VolumesConfig)
+    cluster_test: ClusterTestConfig = Field(default_factory=ClusterTestConfig)
     nodes: NodesConfig = Field(default_factory=NodesConfig)
 
     @model_validator(mode="after")
     def check_port_conflicts(self) -> "Config":
         """Check for port conflicts across services"""
         ports: list[tuple[str, int]] = []
+
+        def add_optional_ray_ports(prefix: str, ray_cfg: RayNodeConfig):
+            if ray_cfg.node_manager_port is not None:
+                ports.append((f"{prefix}-node-manager", ray_cfg.node_manager_port))
+            if ray_cfg.object_manager_port is not None:
+                ports.append((f"{prefix}-object-manager", ray_cfg.object_manager_port))
+
+        def check_range_overlap(
+            label: str,
+            start: int,
+            end: int,
+            reserved: list[tuple[str, int]],
+        ):
+            conflicts = [
+                f"{name}:{port}" for name, port in reserved if start <= port <= end
+            ]
+            if conflicts:
+                raise ValueError(
+                    f"Port range conflicts detected for {label} ({start}-{end}): "
+                    f"{', '.join(conflicts)}"
+                )
 
         # Ray ports
         if self.services.ray.cpu.enabled:
@@ -291,6 +459,7 @@ class Config(BaseSettings):
                     ("ray-cpu-head", self.services.ray.cpu.head_port),
                 ]
             )
+            add_optional_ray_ports("ray-cpu", self.services.ray.cpu)
 
         if self.services.ray.gpu.enabled:
             ports.extend(
@@ -300,6 +469,29 @@ class Config(BaseSettings):
                     ("ray-gpu-head", self.services.ray.gpu.head_port),
                 ]
             )
+            add_optional_ray_ports("ray-gpu", self.services.ray.gpu)
+
+        # Cluster test worker ports
+        ports.extend(
+            [
+                (
+                    "cluster-test-worker-node-manager",
+                    self.cluster_test.worker_node_manager_port,
+                ),
+                (
+                    "cluster-test-worker-object-manager",
+                    self.cluster_test.worker_object_manager_port,
+                ),
+                (
+                    "cluster-test-worker-cpu-node-manager",
+                    self.cluster_test.worker_cpu_node_manager_port,
+                ),
+                (
+                    "cluster-test-worker-cpu-object-manager",
+                    self.cluster_test.worker_cpu_object_manager_port,
+                ),
+            ]
+        )
 
         # Other service ports
         if self.services.mlflow.enabled:
@@ -315,7 +507,7 @@ class Config(BaseSettings):
             ports.append(("health", self.services.health.port))
 
         # Check for duplicates
-        seen: set[int] = set()
+        seen = set[int]()
         duplicates: list[str] = []
         for name, port in ports:
             if port in seen:
@@ -324,6 +516,19 @@ class Config(BaseSettings):
 
         if duplicates:
             raise ValueError(f"Port conflicts detected: {', '.join(duplicates)}")
+
+        check_range_overlap(
+            "cluster-test-worker-port-range",
+            self.cluster_test.worker_min_worker_port,
+            self.cluster_test.worker_max_worker_port,
+            ports,
+        )
+        check_range_overlap(
+            "cluster-test-worker-cpu-port-range",
+            self.cluster_test.worker_cpu_min_worker_port,
+            self.cluster_test.worker_cpu_max_worker_port,
+            ports,
+        )
 
         return self
 
