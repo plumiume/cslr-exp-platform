@@ -19,3 +19,7 @@
 ## PR Review
 
 - PRレビュー依頼が来たときは、レビュー結果をレビューコメントとして投稿する。
+
+## GitHub CLI
+
+- `gh issue create`, `gh pr create`, `gh issue comment` などで作成・返信した後は、`gh issue view` または `gh pr view` で確認する。

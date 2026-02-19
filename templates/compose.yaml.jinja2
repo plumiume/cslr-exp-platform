@@ -38,8 +38,8 @@ services:
     image: python:3.12-alpine
     container_name: {{ project.name }}-health
     volumes:
-      - ../entrypoints/health.sh:/app/health.sh:ro
-    command: ["python3", "/app/health.sh"]
+      - ../entrypoints/health.py:/app/health.py:ro
+    command: ["python3", "/app/health.py"]
     ports:
       - "0.0.0.0:{{ services.health.port }}:8080"
     healthcheck:
