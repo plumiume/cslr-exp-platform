@@ -56,6 +56,12 @@ RUN wget -qO /tmp/miniforge.sh \
 RUN conda create -n py python=${PYTHON_VERSION} -y \
     && conda clean -afy
 
+# py 環境を PATH の先頭に追加（インタラクティブシェルでも py 環境の python がデフォルトになる）
+ENV PATH=/opt/conda/envs/py/bin:${PATH}
+
+# デフォルトで py 環境をアクティベート（conda コマンド用）
+RUN echo "conda activate py" >> /root/.bashrc
+
 SHELL ["conda", "run", "-n", "py", "/bin/bash", "-c"]
 
 # ビルド最適化環境変数
@@ -110,7 +116,7 @@ RUN echo "=== devel Verification ===" \
     && conda clean -afy
 
 WORKDIR /workspace
-CMD ["conda", "run", "-n", "py", "bash"]
+CMD ["bash"]
 
 # =====================================================================
 #  runtime-base : 全 runtime の共通ベース
@@ -185,7 +191,7 @@ RUN echo "=== ray-devel Verification ===" \
     && conda clean -afy
 
 WORKDIR /workspace
-CMD ["conda", "run", "-n", "py", "bash"]
+CMD ["bash"]
 
 # =====================================================================
 #  ray-runtime : env 直接コピー (軽量)
@@ -215,7 +221,7 @@ RUN echo "=== marimo-devel Verification ===" \
     && conda clean -afy
 
 WORKDIR /workspace
-CMD ["conda", "run", "-n", "py", "bash"]
+CMD ["bash"]
 
 # =====================================================================
 #  marimo-runtime : env 直接コピー (デフォルトターゲット)
