@@ -28,6 +28,9 @@
 # --- グローバル ARG (全ステージから参照可能) ---
 ARG CUDA_VERSION=13.1.1
 ARG PYTHON_VERSION=3.14
+# CUDA_TAG は PyTorch wheel の index-url に使う。
+# cu130 は CUDA 13.x 系ビルド（13.0/13.1 共通 tag）であり、
+# CUDA_VERSION=13.1.1 のランタイムで動作させることを意図している。
 ARG CUDA_TAG=cu130
 
 # =====================================================================
@@ -76,8 +79,9 @@ ENV CCACHE_MAXSIZE=5G
 ENV PATH=/usr/lib/ccache:${PATH}
 
 # --- PyTorch ---
+# --mount=type=cache でローカルキャッシュを活用するため --no-cache-dir は付けない
 RUN --mount=type=cache,target=/root/.cache/pip \
-    pip install --no-cache-dir \
+    pip install \
         torch torchvision torchaudio \
         --index-url https://download.pytorch.org/whl/${CUDA_TAG}
 
@@ -85,28 +89,28 @@ RUN python -c "import torch; print(f'PyTorch {torch.__version__}, CUDA {torch.ve
 
 # --- Ninja (PyG拡張ビルドに必須) ---
 RUN --mount=type=cache,target=/root/.cache/pip \
-    pip install --no-cache-dir ninja
+    pip install ninja
 
 # --- torch_geometric 本体 ---
 RUN --mount=type=cache,target=/root/.cache/pip \
-    pip install --no-cache-dir torch_geometric
+    pip install torch_geometric
 
 # --- PyG 拡張: wheel → ソースビルド (統合版: キャッシュ効率化) ---
 RUN --mount=type=cache,target=/root/.cache/pip \
     --mount=type=cache,target=/tmp/ccache \
     TORCH_VERSION=$(python -c "import torch; print(torch.__version__.split('+')[0])") \
     && echo "=== [Step A] Trying wheels: torch-${TORCH_VERSION}+${CUDA_TAG} ===" \
-    && pip install --no-cache-dir \
+    && pip install \
         pyg_lib torch_scatter torch_sparse torch_cluster torch_spline_conv \
         -f "https://data.pyg.org/whl/torch-${TORCH_VERSION}+${CUDA_TAG}.html" \
     || ( echo "=== [Step A] Wheel install failed, will try source build ===" \
         && echo "=== [Step B] Source building scatter/sparse/cluster/spline_conv ===" \
-        && pip install --no-cache-dir --no-build-isolation torch_scatter \
-        && pip install --no-cache-dir --no-build-isolation torch_sparse \
-        && pip install --no-cache-dir --no-build-isolation torch_cluster \
-        && pip install --no-cache-dir --no-build-isolation torch_spline_conv \
+        && pip install --no-build-isolation torch_scatter \
+        && pip install --no-build-isolation torch_sparse \
+        && pip install --no-build-isolation torch_cluster \
+        && pip install --no-build-isolation torch_spline_conv \
         && echo "=== [Step C] Source building pyg_lib (最も時間がかかるステップ) ===" \
-        && pip install --no-cache-dir --no-build-isolation git+https://github.com/pyg-team/pyg-lib.git )
+        && pip install --no-build-isolation git+https://github.com/pyg-team/pyg-lib.git )
 
 RUN echo "=== simple-builder Verification ===" \
     && python -c "import sys; print(f'Python={sys.version}')" \
@@ -183,19 +187,19 @@ RUN --mount=type=cache,target=/root/.cache/pip \
     --mount=type=cache,target=/root/.cache/bazel \
     --mount=type=cache,target=/tmp/ccache \
     PYTHON_CP_VERSION=$(python -c "import sys; print(f'cp{sys.version_info.major}{sys.version_info.minor}')") \
-    && pip install --no-cache-dir \
+    && pip install \
         "https://s3-us-west-2.amazonaws.com/ray-wheels/latest/ray-3.0.0.dev0-${PYTHON_CP_VERSION}-${PYTHON_CP_VERSION}-manylinux2014_x86_64.whl" \
     && echo "=== Ray nightly wheel installed ===" \
     || ( echo "=== Nightly not found – building Ray from source ===" \
         && git clone --depth 1 https://github.com/ray-project/ray.git /tmp/ray \
         && cd /tmp/ray/python \
-        && pip install --no-cache-dir -r requirements.txt \
-        && RAY_INSTALL_JAVA=0 pip install --no-cache-dir . --verbose \
+        && pip install -r requirements.txt \
+        && RAY_INSTALL_JAVA=0 pip install . --verbose \
         && cd / && rm -rf /tmp/ray )
 
 # Ray extras
 RUN --mount=type=cache,target=/root/.cache/pip \
-    pip install --no-cache-dir "ray[data,train,tune,serve]" \
+    pip install "ray[data,train,tune,serve]" \
     || echo "=== Note: some Ray extras may not be resolved ==="
 
 RUN echo "=== ray-builder Verification ===" \
@@ -239,7 +243,7 @@ FROM ray-builder AS marimo-builder
 SHELL ["conda", "run", "-n", "py", "/bin/bash", "-c"]
 
 RUN --mount=type=cache,target=/root/.cache/pip \
-    pip install --no-cache-dir marimo
+    pip install marimo
 
 RUN echo "=== marimo-builder Verification ===" \
     && python -c "import marimo; print(f'marimo={marimo.__version__}')"
