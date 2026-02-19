@@ -253,11 +253,12 @@ nodes:
 ├── config.yaml                  # 実際の設定
 ├── ws                           # CLI ツール（Python typer）
 ├── pyproject.toml               # Python プロジェクト設定
-├── template/
+├── templates/
 │   ├── compose.yaml.jinja2      # メインテンプレート
-│   ├── cluster-test.compose.yaml.jinja2  # テスト用テンプレート
-│   ├── ray-ep.sh                # Ray エントリポイント（CPU/GPU統合）
-│   └── health-ep.sh             # ヘルスチェックサーバー
+│   └── cluster-test.compose.yaml.jinja2  # テスト用テンプレート
+├── entrypoints/
+│   ├── ray.sh                   # Ray エントリポイント（CPU/GPU統合）
+│   └── health.sh                # ヘルスチェックサーバー
 └── _build/
     ├── compose.yaml             # 生成されたメイン設定
     └── cluster-test.compose.yaml # 生成されたテスト設定

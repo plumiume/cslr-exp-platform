@@ -264,11 +264,11 @@ nodes:
    ```bash
    docker compose -f _build/compose.yaml run --rm ray-cpu /bin/bash
    # コンテナ内で
-   /template/ray-ep.sh
+  /entrypoints/ray.sh
    ```
 
 **よくある原因**:
-- `ray-ep.sh` のパーミッション問題 → `chmod +x template/ray-ep.sh`
+- `ray.sh` のパーミッション問題 → `chmod +x entrypoints/ray.sh`
 - 環境変数が正しく注入されていない → `docker inspect` で確認
 - ヘルスチェックサービスが応答しない → `curl http://health:8080` をコンテナ内から実行
 
@@ -905,7 +905,7 @@ env | grep RAY
 env | grep HEAD
 
 # エントリポイントを手動実行
-bash -x /template/ray-ep.sh  # デバッグモード
+bash -x /entrypoints/ray.sh  # デバッグモード
 ```
 
 ### ネットワークデバッグツール

@@ -38,8 +38,8 @@ services:
     image: python:3.12-alpine
     container_name: {{ project.name }}-health
     volumes:
-      - ../template/health-ep.sh:/app/health-ep.sh:ro
-    command: ["python3", "/app/health-ep.sh"]
+      - ../entrypoints/health.sh:/app/health.sh:ro
+    command: ["python3", "/app/health.sh"]
     ports:
       - "0.0.0.0:{{ services.health.port }}:8080"
     healthcheck:
@@ -100,12 +100,12 @@ services:
       - USE_CONDA_ENV=1
 {% endif %}
     volumes:
-      - ../template/ray-ep.sh:/app/ray-ep.sh:ro
+      - ../entrypoints/ray.sh:/app/ray.sh:ro
     user: root
 {% if services.ray.cpu.build and services.ray.cpu.build.enabled %}
-    entrypoint: ["/bin/bash", "-c", "/app/ray-ep.sh"]
+    entrypoint: ["/bin/bash", "-c", "/app/ray.sh"]
 {% else %}
-    entrypoint: ["/bin/bash", "-c", "su - ray -c '/app/ray-ep.sh'"]
+    entrypoint: ["/bin/bash", "-c", "su - ray -c '/app/ray.sh'"]
 {% endif %}
 {% if services.health.enabled %}
     depends_on:
@@ -180,12 +180,12 @@ services:
       - USE_CONDA_ENV=1
 {% endif %}
     volumes:
-      - ../template/ray-ep.sh:/app/ray-ep.sh:ro
+      - ../entrypoints/ray.sh:/app/ray.sh:ro
     user: root
 {% if services.ray.gpu.build and services.ray.gpu.build.enabled %}
-    entrypoint: ["/bin/bash", "-c", "/app/ray-ep.sh"]
+    entrypoint: ["/bin/bash", "-c", "/app/ray.sh"]
 {% else %}
-    entrypoint: ["/bin/bash", "-c", "su - ray -c '/app/ray-ep.sh'"]
+    entrypoint: ["/bin/bash", "-c", "su - ray -c '/app/ray.sh'"]
 {% endif %}
 {% if services.ray.cpu.enabled or services.health.enabled %}
     depends_on:

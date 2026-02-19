@@ -31,8 +31,8 @@ services:
     image: python:3.12-alpine
     container_name: {{ project.name }}-health
     volumes:
-      - ../template/health-ep.sh:/app/health-ep.sh:ro
-    command: ["python3", "/app/health-ep.sh"]
+      - ../entrypoints/health.sh:/app/health.sh:ro
+    command: ["python3", "/app/health.sh"]
     ports:
       - "0.0.0.0:{{ services.health.port }}:8080"
     healthcheck:
@@ -85,10 +85,10 @@ services:
 {% endif %}
       - USE_CONDA_ENV=1
     volumes:
-      - ../template/ray-ep.sh:/app/ray-ep.sh:ro
+      - ../entrypoints/ray.sh:/app/ray.sh:ro
       - ../_build/logs/ray-cpu/tmp-ray:/tmp/ray
     user: root
-    entrypoint: ["/bin/bash", "-c", "/app/ray-ep.sh"]
+    entrypoint: ["/bin/bash", "-c", "/app/ray.sh"]
 {% if services.health.enabled %}
     depends_on:
       health:
@@ -154,10 +154,10 @@ services:
 {% endif %}
       - USE_CONDA_ENV=1
     volumes:
-      - ../template/ray-ep.sh:/app/ray-ep.sh:ro
+      - ../entrypoints/ray.sh:/app/ray.sh:ro
       - ../_build/logs/ray-gpu/tmp-ray:/tmp/ray
     user: root
-    entrypoint: ["/bin/bash", "-c", "/app/ray-ep.sh"]
+    entrypoint: ["/bin/bash", "-c", "/app/ray.sh"]
 {% if services.health.enabled %}
     depends_on:
       health:
@@ -210,7 +210,7 @@ services:
       - WAIT_FOR_HEAD={{ nodes.cluster.wait_for_head }}
       - RAY_NUM_CPUS=1
     volumes:
-      - ../template/ray-ep.sh:/app/ray-ep.sh:ro
+      - ../entrypoints/ray.sh:/app/ray.sh:ro
       - ../_build/logs/test-client/tmp-ray:/tmp/ray
     user: root
     entrypoint: ["/bin/bash", "-c"]
@@ -276,7 +276,7 @@ services:
       - RAY_NUM_CPUS=2
       - HEAD_ADDRESS={{ target_host }}:{{ target_head_port }}
     volumes:
-      - ../template/ray-ep.sh:/app/ray-ep.sh:ro
+      - ../entrypoints/ray.sh:/app/ray.sh:ro
       - ../_build/logs/test-worker/tmp-ray:/tmp/ray
     user: root
     entrypoint: ["/bin/bash", "-c"]
@@ -293,13 +293,13 @@ services:
           timeout 2 bash -c "</dev/tcp/health/{{ services.health.port }}" && echo "✓ health:{{ services.health.port }} reachable" || echo "✗ health:{{ services.health.port }} unreachable"
         {% endif %}
         
-        # Verify ray-ep.sh compatibility (should start as worker)
+        # Verify ray.sh compatibility (should start as worker)
         echo ""
-        echo "Starting Ray worker node using ray-ep.sh..."
+        echo "Starting Ray worker node using ray.sh..."
         echo "This node is NOT in whitelist, so should start as WORKER automatically"
         
         export USE_CONDA_ENV=1
-        /app/ray-ep.sh
+        /app/ray.sh
     depends_on:
       - {{ target_host }}
 {% if services.health.enabled %}
@@ -341,7 +341,7 @@ services:
       - RAY_NUM_CPUS=2
       - HEAD_ADDRESS=ray-cpu:{{ cpu_head_port }}
     volumes:
-      - ../template/ray-ep.sh:/app/ray-ep.sh:ro
+      - ../entrypoints/ray.sh:/app/ray.sh:ro
       - ../_build/logs/test-worker-cpu/tmp-ray:/tmp/ray
     user: root
     entrypoint: ["/bin/bash", "-c"]
@@ -358,10 +358,10 @@ services:
         {% endif %}
 
         echo ""
-        echo "Starting CPU-head validation worker using ray-ep.sh..."
+        echo "Starting CPU-head validation worker using ray.sh..."
 
         export USE_CONDA_ENV=1
-        /app/ray-ep.sh
+        /app/ray.sh
     depends_on:
       - ray-cpu
 {% if services.health.enabled %}

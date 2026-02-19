@@ -112,17 +112,19 @@ graph TB
   - `generate_cluster_test_file()`: テスト Compose 生成
   - Legacy `nodes.yaml` 検出
 
-#### Jinja2 Templates (template/)
+#### Jinja2 Templates (templates/)
 - **compose.yaml.jinja2**: メインクラスター定義
 - **cluster-test.compose.yaml.jinja2**: テストコンテナ定義
-- **ray-ep.sh**: Ray ノードエントリポイント
-- **health-ep.sh**: ヘルスチェックサーバー
+
+#### Entrypoints (entrypoints/)
+- **ray.sh**: Ray ノードエントリポイント
+- **health.sh**: ヘルスチェックサーバー
 
 ### 3. ランタイム層
 
 #### Health Check Service
 - **役割**: ノード状態の監視と Head 候補の追跡
-- **実装**: Python Flask（`template/health-ep.sh`）
+- **実装**: Python（`entrypoints/health.sh`）
 - **エンドポイント**:
   - `GET /`: ヘルスステータス
   - 将来: ノード登録とリーダー選出
@@ -130,7 +132,7 @@ graph TB
 #### Ray Nodes
 - **CPU ノード**: 汎用計算ノード
 - **GPU ノード**: CUDA 対応計算ノード
-- **起動スクリプト**: `ray-ep.sh`
+- **起動スクリプト**: `ray.sh`
 - **モード**: Head または Worker（自動判定）
 
 #### 統合サービス

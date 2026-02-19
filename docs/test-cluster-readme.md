@@ -334,8 +334,8 @@ ray-gpu:
 
 ## 関連ファイル
 
-- [`template/cluster-test.compose.yaml.jinja2`](template/cluster-test.compose.yaml.jinja2): テンプレート定義
-- [`template/ray-ep.sh`](template/ray-ep.sh): HEAD/WORKER 自動検出スクリプト
+- [`templates/cluster-test.compose.yaml.jinja2`](templates/cluster-test.compose.yaml.jinja2): テンプレート定義
+- [`entrypoints/ray.sh`](entrypoints/ray.sh): HEAD/WORKER 自動検出スクリプト
 - [`config.yaml`](config.yaml): Whitelist とヘルスチェック設定（`nodes` セクション）
 - [`ws`](ws): CLI ツール（`test --up/--down/--head` コマンド）
 - [`README.md`](README.md): メインプロジェクトドキュメント
@@ -358,6 +358,6 @@ ray-gpu:
 - tail -f /dev/null でデバッグ可能な状態を維持
 
 ### 4. 本番環境との整合性
-- compose.yaml と cluster-test.compose.yaml で同じ ray-ep.sh を使用
+- compose.yaml と cluster-test.compose.yaml で同じ ray.sh を使用
 - ネットワーク分離によるリアルな接続テスト
 - extra_hosts で NAT/ポートフォワーディングをシミュレーション
