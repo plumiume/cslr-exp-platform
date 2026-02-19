@@ -35,25 +35,13 @@ class WorkspaceManager:
     def __init__(self, project_root: Path):
         self.project_root = project_root
         self.config_path = project_root / "config.yaml"
-        self.templates_dir = self._detect_templates_dir()
+        self.templates_dir = self.project_root / "templates"
         self.template_path = self.templates_dir / "compose.yaml.jinja2"
         self.output_path = project_root / "_build" / "compose.yaml"
         self.test_template_path = (
             self.templates_dir / "cluster-test.compose.yaml.jinja2"
         )
         self.test_output_path = project_root / "_build" / "cluster-test.compose.yaml"
-
-    def _detect_templates_dir(self) -> Path:
-        """Detect templates directory.
-
-        Prefer the current `templates/` layout, but fall back to legacy `template/`
-        to avoid breaking existing checkouts.
-        """
-        candidates = [self.project_root / "templates", self.project_root / "template"]
-        for candidate in candidates:
-            if candidate.exists() and candidate.is_dir():
-                return candidate
-        return self.project_root / "templates"
 
     def load_config(self) -> Config:
         """Load and validate configuration from config.yaml"""
@@ -131,6 +119,11 @@ class WorkspaceManager:
 
     def render_template(self, config: Config, template_name: str | None = None) -> str:
         """Render Jinja2 template with config"""
+        if not (self.templates_dir.exists() and self.templates_dir.is_dir()):
+            console.print(
+                f"[red]Error: templates directory not found: {self.templates_dir}[/red]"
+            )
+            raise typer.Exit(1)
         env = Environment(
             loader=FileSystemLoader(str(self.templates_dir)),
             trim_blocks=True,
