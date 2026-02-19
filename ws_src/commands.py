@@ -74,7 +74,7 @@ def up(
         elif config.services.ray.cpu.enabled:
             profile = "ray-cpu"
 
-    compose_args = []
+    compose_args: list[str] = []
     if profile:
         compose_args.extend(["--profile", profile])
 
