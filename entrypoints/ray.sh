@@ -216,7 +216,7 @@ for i in {1..60}; do
         fi
         break
     fi
-    if [ $i -eq 60 ]; then
+    if [ "$i" -eq 60 ]; then
         echo "ERROR: Ray failed to start properly after 60 seconds"
         "$RAY_EXEC" status || true
         exit 1
