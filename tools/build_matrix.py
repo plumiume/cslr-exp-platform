@@ -23,6 +23,8 @@ build-matrix.yaml の設定を読み込んで、複数のDocker イメージを�
 
 import shutil
 import subprocess
+import os
+import platform
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -43,9 +45,28 @@ def load_matrix(file_path: Path) -> dict[str, Any]:
 
 
 def get_disk_free_gb() -> float:
-    """Cドライブの空き容量をGBで取得"""
-    stat = shutil.disk_usage("C:\\")
+    """ディスク空き容量をGBで取得（OSに応じたルートを監視）"""
+    target_path = _disk_usage_path()
+    try:
+        stat = shutil.disk_usage(target_path)
+    except (FileNotFoundError, OSError, ValueError):
+        # ルートが解決できない環境（chroot等）ではカレントディレクトリをフォールバックにする
+        stat = shutil.disk_usage(str(Path.cwd()))
     return stat.free / (1024**3)
+
+
+def _is_windows() -> bool:
+    return platform.system().lower().startswith("win")
+
+
+def _disk_usage_path() -> str:
+    if _is_windows():
+        system_drive = (os.environ.get("SystemDrive") or "C:").rstrip("\\/")
+        if len(system_drive) == 1 and system_drive.isalpha():
+            system_drive = f"{system_drive}:"
+        # shutil.disk_usage はドライブ直下のパスを期待する（例: "C:\\"）
+        return f"{system_drive}\\"
+    return "/"
 
 
 def push_to_registry(image_tag: str, registry_url: str = "localhost:5001") -> bool:

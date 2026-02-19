@@ -4,6 +4,10 @@ _build/
 # Environment variables
 .env
 
+# Docs
+docs/_build/
+docs/issue-*.md
+
 # Personal configuration
 config.yaml
 
