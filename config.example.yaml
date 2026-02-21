@@ -1,3 +1,9 @@
+# Copyright (c) 2026 plumiume
+# SPDX-License-Identifier: <<spdxid>>
+# License: MIT License (https://opensource.org/licenses/MIT)
+# See LICENSE.txt for details.
+
+
 # Ray クラスター設定例
 # このファイルをコピーして config.yaml として保存し、必要に応じて編集してください
 

@@ -1,3 +1,9 @@
+# Copyright (c) 2026 plumiume
+# SPDX-License-Identifier: <<spdxid>>
+# License: MIT License (https://opensource.org/licenses/MIT)
+# See LICENSE.txt for details.
+
+
 #!/usr/bin/env python3
 """Docker Build Matrix Runner
 

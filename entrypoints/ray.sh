@@ -1,4 +1,11 @@
 #!/bin/bash
+#
+# Copyright (c) 2026 plumiume
+# SPDX-License-Identifier: MIT
+# License: MIT License (https://opensource.org/licenses/MIT)
+# See LICENSE.txt for details.
+
+
 set -e
 
 # Ray Node Entrypoint (CPU/GPU unified)

@@ -1,0 +1,78 @@
+{
+  "files.associations": {
+  },
+  "yaml.schemas": {
+    "./.vscode/config.schema.json": "config*.yaml",
+    "./.vscode/nodes.schema.json": "nodes*.yaml"
+  },
+  "[jinja-compose]": {
+    "editor.defaultFormatter": "ms-python.python",
+    "editor.formatOnSave": true,
+    "editor.tabSize": 2,
+    "editor.insertSpaces": true
+  },
+
+  "psi-header.config": {
+    "forceToTop": true,
+    "blankLinesAfter": 1,
+    "license": "MIT",
+    "company": "plumiume",
+    "copyrightHolder": "plumiume",
+    "overridePathSeparator": "/"
+  },
+  "psi-header.changes-tracking": {
+    "isActive": true,
+    "autoHeader": "off",
+    "enforceHeader": false,
+    "modDate": "Last Modified:",
+    "modAuthor": "Modified By:",
+    "modDateFormat": "YYYY-MM-DD HH:mm:ss",
+    "replace": ["File:", "Project:", "SPDX-License-Identifier:"],
+    "exclude": ["markdown", "json", "jsonc"],
+    "excludeGlob": [
+      ".venv/**",
+      "_build/**",
+      "__pycache__/**",
+      "cslr_exp_platform.egg-info/**"
+    ],
+    "updateLicenseVariables": false
+  },
+  "psi-header.lang-config": [
+    {
+      "language": "*",
+      "rootDirFileName": "pyproject.toml"
+    },
+    {
+      "language": "python",
+      "begin": "",
+      "prefix": "# ",
+      "end": "",
+      "blankLinesAfter": 2
+    },
+    {
+      "language": "yaml",
+      "begin": "",
+      "prefix": "# ",
+      "end": "",
+      "blankLinesAfter": 1
+    },
+    {
+      "language": "jinja-yaml",
+      "begin": "",
+      "prefix": "# ",
+      "end": "",
+      "blankLinesAfter": 1
+    }
+  ],
+  "psi-header.templates": [
+    {
+      "language": "*",
+      "template": [
+        "Copyright (c) <<yeartoyear(fc!P,now)>> <<copyrightholder>>",
+        "SPDX-License-Identifier: <<spdxid>>",
+        "License: <<licensename>> (<<licenseurl>>)",
+        "See LICENSE.txt for details."
+      ]
+    }
+  ]
+}

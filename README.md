@@ -422,7 +422,7 @@ GPU使用時:
 
 ## ライセンス
 
-MIT License
+本プロジェクトは MIT License の下で公開しています。詳細は [LICENSE.txt](LICENSE.txt) を参照してください。
 
 ## 参考資料
 

@@ -1,5 +1,11 @@
 #!/usr/bin/env python3
 # Health check HTTP server
+#
+# Copyright (c) 2026 plumiume
+# SPDX-License-Identifier: MIT
+# License: MIT License (https://opensource.org/licenses/MIT)
+# See LICENSE.txt for details.
+
 from typing import Any
 from http.server import BaseHTTPRequestHandler, HTTPServer
 

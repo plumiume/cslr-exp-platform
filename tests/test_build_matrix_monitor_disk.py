@@ -1,3 +1,9 @@
+# Copyright (c) 2026 plumiume
+# SPDX-License-Identifier: <<spdxid>>
+# License: MIT License (https://opensource.org/licenses/MIT)
+# See LICENSE.txt for details.
+
+
 import importlib.util
 from collections import namedtuple
 from pathlib import Path

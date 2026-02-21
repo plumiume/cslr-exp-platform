@@ -1,3 +1,9 @@
+# Copyright (c) 2026 plumiume
+# SPDX-License-Identifier: <<spdxid>>
+# License: MIT License (https://opensource.org/licenses/MIT)
+# See LICENSE.txt for details.
+
+
 """
 ray.sh の pip-requirements インストールブロックの動作検証。
 

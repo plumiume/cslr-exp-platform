@@ -1,3 +1,8 @@
+# Copyright (c) 2026 plumiume
+# SPDX-License-Identifier: MIT
+# License: MIT License (https://opensource.org/licenses/MIT)
+# See LICENSE.txt for details.
+
 # =============================================================================
 # PyG + Ray + Marimo  |  CUDA 13.x + Python 3.14
 # =============================================================================

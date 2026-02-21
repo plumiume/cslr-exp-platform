@@ -1,5 +1,11 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
+#
+# Copyright (c) 2026 plumiume
+# SPDX-License-Identifier: MIT
+# License: MIT License (https://opensource.org/licenses/MIT)
+# See LICENSE.txt for details.
+
 """Schema generation utilities."""
 
 from __future__ import annotations

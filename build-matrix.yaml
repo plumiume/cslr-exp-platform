@@ -1,3 +1,8 @@
+# Copyright (c) 2026 plumiume
+# SPDX-License-Identifier: <<spdxid>>
+# License: MIT License (https://opensource.org/licenses/MIT)
+# See LICENSE.txt for details.
+
 # Docker Build Matrix Configuration
 # 複数のCUDA/Python/ターゲットの組み合わせでビルドを実行するための設定
 
