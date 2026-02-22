@@ -216,7 +216,7 @@ RUN --mount=type=cache,target=/root/.cache/pip \
 
 # Ray extras
 RUN --mount=type=cache,target=/root/.cache/pip \
-    pip install "ray[data,train,tune,serve]" \
+    pip install ray[data,train,tune,serve] pyzmq \
     || echo "=== Note: some Ray extras may not be resolved ==="
 
 RUN echo "=== ray-builder Verification ===" \
