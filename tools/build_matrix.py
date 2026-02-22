@@ -4,7 +4,6 @@
 # See LICENSE.txt for details.
 
 
-#!/usr/bin/env python3
 """Docker Build Matrix Runner
 
 build-matrix.yaml の設定を読み込んで、複数のDocker イメージを並列またはシーケンシャルにビルドします。
@@ -33,10 +32,10 @@ import os
 import platform
 from datetime import datetime
 from pathlib import Path
-from typing import Any
 
 import typer
 import yaml
+from pydantic import BaseModel, Field, ValidationError
 from rich.console import Console
 from rich.table import Table
 
@@ -44,10 +43,65 @@ console = Console()
 app = typer.Typer(help="Docker Build Matrix Runner")
 
 
-def load_matrix(file_path: Path) -> dict[str, Any]:
+VALID_SERVICES = {"simple", "ray", "marimo"}
+VALID_VARIANTS = {"cpu", "devel", "runtime"}
+
+
+class ExpandedBuild(BaseModel):
+    service: str
+    variant: str
+    target: str
+    tag: str
+
+
+class MatrixTarget(BaseModel):
+    service: str
+    variant: str
+    tag: str | None = None
+
+
+class MatrixBuildConfig(BaseModel):
+    cuda_version: str | None
+    python_version: str
+    cuda_tag: str
+    torch_version: str
+    ray_version: str
+    services: list[str] = Field(default_factory=list)
+    variants: list[str] = Field(default_factory=list)
+    targets: list[MatrixTarget] = Field(default_factory=list)
+    excludes: list[MatrixTarget] = Field(default_factory=list)
+
+
+class BuildOptions(BaseModel):
+    platform: str
+    image_prefix: str
+
+
+class MinimalBuild(BaseModel):
+    cuda_version: str | None
+    python_version: str
+    cuda_tag: str
+    torch_version: str
+    ray_version: str
+    service: str
+    variant: str
+    tag: str | None = None
+
+
+class BuildMatrixConfig(BaseModel):
+    matrix: list[MatrixBuildConfig] = Field(default_factory=list)
+    build_options: BuildOptions
+    minimal_build: MinimalBuild
+
+
+def load_matrix(file_path: Path) -> BuildMatrixConfig:
     """ビルドマトリックス設定を読み込む"""
     with open(file_path, encoding="utf-8") as f:
-        return yaml.safe_load(f)
+        raw_data = yaml.safe_load(f)
+    try:
+        return BuildMatrixConfig.model_validate(raw_data)
+    except ValidationError as exc:
+        raise ValueError(f"build-matrix.yaml の形式が不正です: {exc}") from exc
 
 
 def get_disk_free_gb() -> float:
@@ -146,8 +200,10 @@ def cleanup_runtime_images(keep_devel: bool = True) -> None:
 
 def build_command(
     cuda_version: str | None,
+    variant: str,
     python_version: str,
     cuda_tag: str,
+    ray_version: str,
     target: str,
     tag: str,
     image_prefix: str,
@@ -157,18 +213,17 @@ def build_command(
     build_args: list[tuple[str, str]] = [
         ("PYTHON_VERSION", python_version),
         ("CUDA_TAG", cuda_tag),
+        ("RAY_VERSION", ray_version),
     ]
 
-    # CPU バリアント等で cuda_version が null の場合は CUDA_VERSION の build-arg を渡さない。
-    # 代わりに BASE_IMAGE/RUNTIME_BASE_IMAGE を明示して、分岐を build-arg に寄せる。
-    if cuda_version is None:
+    if variant == "cpu":
         build_args.extend(
             [
                 ("BASE_IMAGE", "ubuntu:24.04"),
                 ("RUNTIME_BASE_IMAGE", "ubuntu:24.04"),
             ]
         )
-    else:
+    elif cuda_version is not None:
         build_args.insert(0, ("CUDA_VERSION", cuda_version))
 
     cmd: list[str] = [
@@ -218,41 +273,119 @@ def run_build(cmd: list[str], dry_run: bool = False) -> tuple[bool, float]:
 
 
 def filter_matrix(
-    matrix_data: dict[str, Any],
+    matrix_data: BuildMatrixConfig,
     cuda_filter: str | None = None,
     python_filter: str | None = None,
     target_filter: str | None = None,
-) -> list[tuple[dict[str, Any], dict[str, str]]]:
+) -> list[tuple[MatrixBuildConfig, ExpandedBuild]]:
     """マトリックスをフィルタリング"""
-    filtered: list[tuple[dict[str, Any], dict[str, str]]] = []
+    filtered: list[tuple[MatrixBuildConfig, ExpandedBuild]] = []
 
     normalized_cuda_filter = cuda_filter
     if normalized_cuda_filter is not None:
         normalized_cuda_filter = normalized_cuda_filter.strip()
 
-    for config in matrix_data["matrix"]:
+    for config in matrix_data.matrix:
         if normalized_cuda_filter:
-            cfg_cuda_version = config.get("cuda_version")
-            if normalized_cuda_filter.lower() in {"cpu", "none", "null"}:
-                if cfg_cuda_version is not None:
-                    continue
-            elif cfg_cuda_version != normalized_cuda_filter:
+            cfg_cuda_version = config.cuda_version
+            if cfg_cuda_version != normalized_cuda_filter:
                 continue
-        if python_filter and config["python_version"] != python_filter:
+        if python_filter and config.python_version != python_filter:
             continue
 
-        for target in config["targets"]:
-            if target_filter and target["name"] != target_filter:
+        for expanded in expand_matrix_config(config):
+            if target_filter and expanded.target != target_filter:
                 continue
-            filtered.append((config, target))
+            filtered.append((config, expanded))
 
     return filtered
 
 
+def resolve_target_name(service: str, variant: str) -> str:
+    if variant == "cpu":
+        return f"{service}-cpu"
+    return f"{service}-{variant}"
+
+
+def generate_tag(
+    service: str,
+    variant: str,
+    cuda_tag: str,
+    python_version: str,
+    torch_version: str,
+    ray_version: str,
+) -> str:
+    py_tag = f"py{python_version.replace('.', '')}"
+    target_name = resolve_target_name(service, variant)
+
+    if variant == "cpu":
+        tag = f"{target_name}-{py_tag}-torch{torch_version}"
+    else:
+        tag = f"{target_name}-{cuda_tag}-{py_tag}-torch{torch_version}"
+
+    if service in {"ray", "marimo"}:
+        tag = f"{tag}-ray{ray_version}"
+
+    return tag
+
+
+def expand_matrix_config(config: MatrixBuildConfig) -> list[ExpandedBuild]:
+    expanded: list[ExpandedBuild] = []
+    build_map: dict[tuple[str, str], ExpandedBuild] = {}
+
+    for service in config.services:
+        if service not in VALID_SERVICES:
+            raise ValueError(f"不正な service: {service}")
+        for variant in config.variants:
+            if variant not in VALID_VARIANTS:
+                raise ValueError(f"不正な variant: {variant}")
+
+            target = resolve_target_name(service, variant)
+            tag = generate_tag(
+                service=service,
+                variant=variant,
+                cuda_tag=config.cuda_tag,
+                python_version=config.python_version,
+                torch_version=config.torch_version,
+                ray_version=config.ray_version,
+            )
+            expanded_build = ExpandedBuild(
+                service=service,
+                variant=variant,
+                target=target,
+                tag=tag,
+            )
+            expanded.append(expanded_build)
+            build_map[(service, variant)] = expanded_build
+
+    for exclude_cfg in config.excludes:
+        key = (exclude_cfg.service, exclude_cfg.variant)
+        if key not in build_map:
+            raise ValueError(
+                "excludes は services×variants に含まれる組み合わせのみ指定できます: "
+                f"service={exclude_cfg.service}, variant={exclude_cfg.variant}"
+            )
+        if exclude_cfg.tag and build_map[key].tag != exclude_cfg.tag:
+            continue
+        build_map.pop(key)
+
+    for target_cfg in config.targets:
+        key = (target_cfg.service, target_cfg.variant)
+        if key not in build_map:
+            raise ValueError(
+                "targets の override は services×variants に含まれる組み合わせのみ指定できます: "
+                f"service={target_cfg.service}, variant={target_cfg.variant}"
+            )
+        if target_cfg.tag:
+            build_map[key].tag = target_cfg.tag
+
+    return list(build_map.values())
+
+
 def get_phase_builds(
     phase: str,
-    matrix_data: dict[str, Any],
-) -> list[tuple[dict[str, Any], dict[str, str]]]:
+    matrix_data: BuildMatrixConfig,
+) -> list[tuple[MatrixBuildConfig, ExpandedBuild]]:
     """フェーズに基づいてビルド対象を取得"""
     if phase == "phase1":
         # Phase 1: CUDA 12.8.1 + Python 3.13 基本構成
@@ -266,8 +399,8 @@ def get_phase_builds(
         builds.extend(filter_matrix(matrix_data, "12.8.1", "3.13", "marimo-devel"))
         return builds
     elif phase == "phase3":
-        # Phase 3: CUDA 13.1.1 + Python 3.14 次世代環境
-        return filter_matrix(matrix_data, "13.1.1", "3.14")
+        # Phase 3: CUDA 13.x + Python 3.14 次世代環境
+        return filter_matrix(matrix_data, "13.0.2", "3.14")
     elif phase == "phase4":
         # Phase 4: CUDA 12.8.1 + Python 3.14 バリエーション
         return filter_matrix(matrix_data, "12.8.1", "3.14")
@@ -287,7 +420,9 @@ def main(
         help="フェーズ別ビルド (phase1, phase2, phase3, phase4)",
     ),
     cuda: str | None = typer.Option(
-        None, "--cuda", help="特定のCUDAバージョンのみビルド (例: 12.8.1 / cpu / none / null)"
+        None,
+        "--cuda",
+        help="特定のCUDAバージョンのみビルド (例: 12.8.1 / 13.0.2)",
     ),
     python: str | None = typer.Option(
         None, "--python", help="特定のPythonバージョンのみビルド (例: 3.13)"
@@ -316,22 +451,41 @@ def main(
         console.print(f"[red]エラー: {matrix_file} が見つかりません[/red]")
         raise typer.Exit(code=1)
 
-    matrix_data = load_matrix(matrix_file)
-    build_options = matrix_data["build_options"]
+    try:
+        matrix_data = load_matrix(matrix_file)
+    except ValueError as exc:
+        console.print(f"[red]エラー: {exc}[/red]")
+        raise typer.Exit(code=1) from exc
 
-    builds: list[tuple[dict[str, Any], dict[str, str]]] = []
+    build_options = matrix_data.build_options
+
+    builds: list[tuple[MatrixBuildConfig, ExpandedBuild]] = []
 
     # 最小構成ビルド
     if minimal:
-        minimal_config = matrix_data["minimal_build"]
+        minimal_config = matrix_data.minimal_build
+        minimal_target = resolve_target_name(
+            minimal_config.service,
+            minimal_config.variant,
+        )
+        minimal_tag = minimal_config.tag or generate_tag(
+            service=minimal_config.service,
+            variant=minimal_config.variant,
+            cuda_tag=minimal_config.cuda_tag,
+            python_version=minimal_config.python_version,
+            torch_version=minimal_config.torch_version,
+            ray_version=minimal_config.ray_version,
+        )
         cmd = build_command(
-            cuda_version=minimal_config["cuda_version"],
-            python_version=minimal_config["python_version"],
-            cuda_tag=minimal_config["cuda_tag"],
-            target=minimal_config["target"],
-            tag=minimal_config["tag"],
-            image_prefix=build_options["image_prefix"],
-            platform=build_options["platform"],
+            cuda_version=minimal_config.cuda_version,
+            variant=minimal_config.variant,
+            python_version=minimal_config.python_version,
+            cuda_tag=minimal_config.cuda_tag,
+            ray_version=minimal_config.ray_version,
+            target=minimal_target,
+            tag=minimal_tag,
+            image_prefix=build_options.image_prefix,
+            platform=build_options.platform,
         )
         success, duration = run_build(cmd, dry_run)
         raise typer.Exit(code=0 if success else 1)
@@ -370,10 +524,10 @@ def main(
     for idx, (config, target_info) in enumerate(builds, 1):
         table.add_row(
             str(idx),
-            str(config.get("cuda_version") or "cpu"),
-            config["python_version"],
-            target_info["name"],
-            target_info["tag"],
+            str(config.cuda_version),
+            config.python_version,
+            target_info.target,
+            target_info.tag,
         )
 
     console.print(table)
@@ -412,20 +566,22 @@ def main(
             f"\n[bold blue]===== ビルド {idx}/{len(builds)} =====[/bold blue]"
         )
         cmd = build_command(
-            cuda_version=config["cuda_version"],
-            python_version=config["python_version"],
-            cuda_tag=config["cuda_tag"],
-            target=target_info["name"],
-            tag=target_info["tag"],
-            image_prefix=build_options["image_prefix"],
-            platform=build_options["platform"],
+            cuda_version=config.cuda_version,
+            variant=target_info.variant,
+            python_version=config.python_version,
+            cuda_tag=config.cuda_tag,
+            ray_version=config.ray_version,
+            target=target_info.target,
+            tag=target_info.tag,
+            image_prefix=build_options.image_prefix,
+            platform=build_options.platform,
         )
         success, duration = run_build(cmd, dry_run)
 
         # イメージサイズを取得
         image_size = 0
         if success and not dry_run:
-            full_tag = f"{build_options['image_prefix']}:{target_info['tag']}"
+            full_tag = f"{build_options.image_prefix}:{target_info.tag}"
             try:
                 result = subprocess.run(
                     ["docker", "image", "inspect", full_tag, "--format={{.Size}}"],
@@ -437,11 +593,11 @@ def main(
             except (subprocess.CalledProcessError, ValueError):
                 image_size = 0
 
-        results.append((target_info["tag"], success, duration, image_size))
+        results.append((target_info.tag, success, duration, image_size))
 
         # ビルド成功時の処理
         if success and not dry_run:
-            full_tag = f"{build_options['image_prefix']}:{target_info['tag']}"
+            full_tag = f"{build_options.image_prefix}:{target_info.tag}"
 
             # レジストリにプッシュ
             if push_registry:
@@ -450,8 +606,8 @@ def main(
             # runtimeイメージはローカルから削除（develは保持）
             if (
                 monitor_disk
-                and "runtime" in target_info["name"]
-                and "devel" not in target_info["name"]
+                and "runtime" in target_info.target
+                and "devel" not in target_info.target
             ):
                 console.print(
                     f"[yellow]ローカルのruntimeイメージを削除: {full_tag}[/yellow]"

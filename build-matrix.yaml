@@ -8,106 +8,58 @@
 
 matrix:
   # CPUのみ + Python 3.13
-  - cuda_version: null
+  - cuda_version: "cpu"
     python_version: "3.13"
     cuda_tag: "cpu"
+    torch_version: "2.8.0"
     ray_version: "2.54.0"
-    targets:
-      - name: simple-cpu
-        tag: "simple-cpu-py313-torch2.8.0"
-      - name: ray-cpu
-        tag: "ray-cpu-py313-torch2.8.0-ray2.54.0"
-      - name: marimo-cpu
-        tag: "marimo-cpu-py313-torch2.8.0-ray2.54.0"
+    services: ["simple", "ray", "marimo"]
+    variants: ["cpu"]
 
   # CPUのみ + Python 3.14
-  - cuda_version: null
+  - cuda_version: "cpu"
     python_version: "3.14"
     cuda_tag: "cpu"
+    torch_version: "2.9.0"
     ray_version: "3.0.0.dev0"
-    targets:
-      - name: simple-cpu
-        tag: "simple-cpu-py314-torch2.9.0"
-      - name: ray-cpu
-        tag: "ray-cpu-py314-torch2.9.0-ray3.0.0.dev0"
-      - name: marimo-cpu
-        tag: "marimo-cpu-py314-torch2.9.0-ray3.0.0.dev0"
+    services: ["simple", "ray", "marimo"]
+    variants: ["cpu"]
 
   # CUDA 12.x系 + Python 3.13
   - cuda_version: "12.8.1"
     python_version: "3.13"
     cuda_tag: "cu128"
+    torch_version: "2.8.0"
     ray_version: "2.54.0"
-    targets:
-      - name: "simple-devel"
-        tag: "simple-devel-cu128-py313-torch2.8.0"
-      - name: "simple-runtime"
-        tag: "simple-runtime-cu128-py313-torch2.8.0"
-      - name: "ray-devel"
-        tag: "ray-devel-cu128-py313-torch2.8.0-ray2.54.0"
-      - name: "ray-runtime"
-        tag: "ray-runtime-cu128-py313-torch2.8.0-ray2.54.0"
-      - name: "marimo-devel"
-        tag: "marimo-devel-cu128-py313-torch2.8.0-ray2.54.0"
-      - name: "marimo-runtime"
-        tag: "marimo-runtime-cu128-py313-torch2.8.0-ray2.54.0"
+    services: ["simple", "ray", "marimo"]
+    variants: ["devel", "runtime"]
 
   # CUDA 12.x系 + Python 3.14
   - cuda_version: "12.8.1"
     python_version: "3.14"
     cuda_tag: "cu128"
+    torch_version: "2.8.0"
     ray_version: "3.0.0.dev0"
-    targets:
-      - name: "simple-devel"
-        tag: "simple-devel-cu128-py314-torch2.8.0"
-      - name: "simple-runtime"
-        tag: "simple-runtime-cu128-py314-torch2.8.0"
-      - name: "ray-devel"
-        tag: "ray-devel-cu128-py314-torch2.8.0-ray3.0.0.dev0"
-      - name: "ray-runtime"
-        tag: "ray-runtime-cu128-py314-torch2.8.0-ray3.0.0.dev0"
-      - name: "marimo-devel"
-        tag: "marimo-devel-cu128-py314-torch2.8.0-ray3.0.0.dev0"
-      - name: "marimo-runtime"
-        tag: "marimo-runtime-cu128-py314-torch2.8.0-ray3.0.0.dev0"
+    services: ["simple", "ray", "marimo"]
+    variants: ["devel", "runtime"]
 
   # CUDA 13.x系 + Python 3.13
   - cuda_version: "13.0.2"
     python_version: "3.13"
     cuda_tag: "cu130"
+    torch_version: "2.8.0"
     ray_version: "2.54.0"
-    targets:
-      - name: "simple-devel"
-        tag: "simple-devel-cu130-py313-torch2.8.0"
-      - name: "simple-runtime"
-        tag: "simple-runtime-cu130-py313-torch2.8.0"
-      - name: "ray-devel"
-        tag: "ray-devel-cu130-py313-torch2.8.0-ray2.54.0"
-      - name: "ray-runtime"
-        tag: "ray-runtime-cu130-py313-torch2.8.0-ray2.54.0"
-      - name: "marimo-devel"
-        tag: "marimo-devel-cu130-py313-torch2.8.0-ray2.54.0"
-      - name: "marimo-runtime"
-        tag: "marimo-runtime-cu130-py313-torch2.8.0-ray2.54.0"
+    services: ["simple", "ray", "marimo"]
+    variants: ["devel", "runtime"]
   
   # CUDA 13.x系 + Python 3.14
   - cuda_version: "13.0.2"
     python_version: "3.14"
     cuda_tag: "cu130"
+    torch_version: "2.9.0"
     ray_version: "3.0.0.dev0"
-    targets:
-      - name: "simple-devel"
-        tag: "simple-devel-cu130-py314-torch2.9.0"
-      - name: "simple-runtime"
-        tag: "simple-runtime-cu130-py314-torch2.9.0"
-      - name: "ray-devel"
-        tag: "ray-devel-cu130-py314-torch2.9.0-ray3.0.0.dev0"
-      - name: "ray-runtime"
-        tag: "ray-runtime-cu130-py314-torch2.9.0-ray3.0.0.dev0"
-      - name: "marimo-devel"
-        tag: "marimo-devel-cu130-py314-torch2.9.0-ray3.0.0.dev0"
-      - name: "marimo-runtime"
-        tag: "marimo-runtime-cu130-py314-torch2.9.0-ray3.0.0.dev0"
+    services: ["simple", "ray", "marimo"]
+    variants: ["devel", "runtime"]
 
 
 # ビルド設定
@@ -120,6 +72,7 @@ minimal_build:
   cuda_version: "12.8.1"
   python_version: "3.13"
   cuda_tag: "cu128"
+  torch_version: "2.8.0"
   ray_version: "2.54.0"
-  target: "marimo-runtime"
-  tag: "marimo-runtime-cu128-py313-torch2.8.0-ray2.54.0"
+  service: "marimo"
+  variant: "runtime"

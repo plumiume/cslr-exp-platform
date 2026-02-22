@@ -37,6 +37,7 @@ ARG PYTHON_VERSION=3.14
 # cu130 は CUDA 13.x 系ビルド（13.0/13.1 共通 tag）であり、
 # CUDA_VERSION=13.1.1 のランタイムで動作させることを意図している。
 ARG CUDA_TAG=cu130
+ARG RAY_VERSION=3.0.0.dev0
 # simple-builder のベースイメージ。
 # 未指定時は従来どおり nvidia/cuda:${CUDA_VERSION}-cudnn-devel-ubuntu24.04 を使う。
 ARG BASE_IMAGE=nvidia/cuda:${CUDA_VERSION}-cudnn-devel-ubuntu24.04
@@ -190,6 +191,7 @@ FROM simple-runtime AS simple-cpu
 # =====================================================================
 FROM simple-builder AS ray-builder
 
+ARG RAY_VERSION
 SHELL ["conda", "run", "-n", "py", "/bin/bash", "-c"]
 
 # Bazelisk (Ray ソースビルドに必要 — nightly が使えなかった場合)
@@ -198,25 +200,31 @@ RUN --mount=type=cache,target=/root/.cache/wget \
         "https://github.com/bazelbuild/bazelisk/releases/latest/download/bazelisk-linux-amd64" \
     && chmod +x /usr/local/bin/bazel
 
-# --- Try 1: nightly wheel (高速) ---
-# --- Try 2: master ソースビルド ---
+# --- Ray 本体 ---
+# stable 版は PyPI の固定バージョンを使用。
+# dev/nightly のみ S3 nightly wheel → ソースビルドへフォールバックする。
 RUN --mount=type=cache,target=/root/.cache/pip \
     --mount=type=cache,target=/root/.cache/bazel \
     --mount=type=cache,target=/tmp/ccache \
-    PYTHON_CP_VERSION=$(python -c "import sys; print(f'cp{sys.version_info.major}{sys.version_info.minor}')") \
-    && pip install \
-        "https://s3-us-west-2.amazonaws.com/ray-wheels/latest/ray-3.0.0.dev0-${PYTHON_CP_VERSION}-${PYTHON_CP_VERSION}-manylinux2014_x86_64.whl" \
-    && echo "=== Ray nightly wheel installed ===" \
-    || ( echo "=== Nightly not found – building Ray from source ===" \
-        && git clone --depth 1 https://github.com/ray-project/ray.git /tmp/ray \
-        && cd /tmp/ray/python \
-        && pip install -r requirements.txt \
-        && RAY_INSTALL_JAVA=0 pip install . --verbose \
-        && cd / && rm -rf /tmp/ray )
+    if [[ "${RAY_VERSION}" == *"dev"* ]]; then \
+        PYTHON_CP_VERSION=$(python -c "import sys; print(f'cp{sys.version_info.major}{sys.version_info.minor}')") \
+        && pip install \
+            "https://s3-us-west-2.amazonaws.com/ray-wheels/latest/ray-${RAY_VERSION}-${PYTHON_CP_VERSION}-${PYTHON_CP_VERSION}-manylinux2014_x86_64.whl" \
+        && echo "=== Ray nightly wheel installed: ${RAY_VERSION} ===" \
+        || ( echo "=== Nightly not found – building Ray from source ===" \
+            && git clone --depth 1 https://github.com/ray-project/ray.git /tmp/ray \
+            && cd /tmp/ray/python \
+            && pip install -r requirements.txt \
+            && RAY_INSTALL_JAVA=0 pip install . --verbose \
+            && cd / && rm -rf /tmp/ray ); \
+    else \
+        pip install "ray==${RAY_VERSION}" \
+        && echo "=== Ray stable installed: ${RAY_VERSION} ==="; \
+    fi
 
 # Ray extras
 RUN --mount=type=cache,target=/root/.cache/pip \
-    pip install ray[data,train,tune,serve] pyzmq \
+    pip install "ray[data,train,tune,serve]==${RAY_VERSION}" pyzmq \
     || echo "=== Note: some Ray extras may not be resolved ==="
 
 RUN echo "=== ray-builder Verification ===" \
