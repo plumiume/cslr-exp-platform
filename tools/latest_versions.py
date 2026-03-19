@@ -1,10 +1,11 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+#
 # Copyright (c) 2026 plumiume
 # SPDX-License-Identifier: <<spdxid>>
 # License: MIT License (https://opensource.org/licenses/MIT)
 # See LICENSE.txt for details.
 
-
-#!/usr/bin/env python3
 """Latest versions summary fetcher.
 
 - Docker CUDA images (Docker Hub: nvidia/cuda)

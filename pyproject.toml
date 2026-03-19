@@ -41,5 +41,5 @@ max-line-length = 88
 extend-exclude = ".venv,_build"
 
 [tool.pyright]
-include = ["ws_src", "tools", "tests"]
+include = ["ws_src", "tools", "tests", "ws_main.py"]
 exclude = [".venv", "_build", "__pycache__", "cslr_exp_platform.egg-info"]

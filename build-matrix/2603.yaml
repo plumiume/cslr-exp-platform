@@ -1,0 +1,80 @@
+# Copyright (c) 2026 plumiume
+# SPDX-License-Identifier: <<spdxid>>
+# License: MIT License (https://opensource.org/licenses/MIT)
+# See LICENSE.txt for details.
+
+# Docker Build Matrix Configuration
+# 複数のCUDA/Python/ターゲットの組み合わせでビルドを実行するための設定
+# Generated: 2026-03-20
+# Versions: CUDA 13.2.0, Python 3.13/3.14, PyTorch 2.10.0, Ray 2.54.0
+
+matrix:
+  # CPUのみ + Python 3.13
+  - cuda_version: "cpu"
+    python_version: "3.13"
+    cuda_tag: "cpu"
+    torch_version: "2.10.0"
+    ray_version: "2.54.0"
+    services: ["simple", "ray", "marimo"]
+    variants: ["cpu"]
+
+  # CPUのみ + Python 3.14
+  - cuda_version: "cpu"
+    python_version: "3.14"
+    cuda_tag: "cpu"
+    torch_version: "2.10.0"
+    ray_version: "3.0.0.dev0"
+    services: ["simple", "ray", "marimo"]
+    variants: ["cpu"]
+
+  # CUDA 12.x系 + Python 3.13
+  - cuda_version: "12.8.1"
+    python_version: "3.13"
+    cuda_tag: "cu128"
+    torch_version: "2.10.0"
+    ray_version: "2.54.0"
+    services: ["simple", "ray", "marimo"]
+    variants: ["devel", "runtime"]
+
+  # CUDA 12.x系 + Python 3.14
+  - cuda_version: "12.8.1"
+    python_version: "3.14"
+    cuda_tag: "cu128"
+    torch_version: "2.10.0"
+    ray_version: "3.0.0.dev0"
+    services: ["simple", "ray", "marimo"]
+    variants: ["devel", "runtime"]
+
+  # CUDA 13.x系 + Python 3.13
+  - cuda_version: "13.2.0"
+    python_version: "3.13"
+    cuda_tag: "cu132"
+    torch_version: "2.10.0"
+    ray_version: "2.54.0"
+    services: ["simple", "ray", "marimo"]
+    variants: ["devel", "runtime"]
+
+  # CUDA 13.x系 + Python 3.14
+  - cuda_version: "13.2.0"
+    python_version: "3.14"
+    cuda_tag: "cu132"
+    torch_version: "2.10.0"
+    ray_version: "3.0.0.dev0"
+    services: ["simple", "ray", "marimo"]
+    variants: ["devel", "runtime"]
+
+
+# ビルド設定
+build_options:
+  platform: "linux/amd64"
+  image_prefix: "plumiiume/cslr-exp-platform"
+
+# 最小構成（テスト用）
+minimal_build:
+  cuda_version: "13.2.0"
+  python_version: "3.13"
+  cuda_tag: "cu132"
+  torch_version: "2.10.0"
+  ray_version: "2.54.0"
+  service: "marimo"
+  variant: "runtime"

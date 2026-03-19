@@ -3,7 +3,8 @@
   },
   "yaml.schemas": {
     "./.vscode/config.schema.json": "config*.yaml",
-    "./.vscode/nodes.schema.json": "nodes*.yaml"
+    "./.vscode/nodes.schema.json": "nodes*.yaml",
+    "./.vscode/build-matrix.schema.json": "build-matrix/*.yaml"
   },
   "[jinja-compose]": {
     "editor.defaultFormatter": "ms-python.python",
