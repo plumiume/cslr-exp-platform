@@ -6,15 +6,6 @@
 # プロジェクト名: {{ project.name }}
 # バージョン: {{ project.version }}
 
-x-gpu: &gpu
-  deploy:
-    resources:
-      reservations:
-        devices:
-          - driver: nvidia
-            count: all
-            capabilities: [gpu]
-
 x-ray-environment: &ray-environment
   HEAD_WHITELIST: "{{ nodes.head_whitelist | join(' ') }}"
   HEAD_ADDRESS_CFG: "{{ nodes.head_address or '' }}"
@@ -25,23 +16,14 @@ x-ray-environment: &ray-environment
   DISCOVERY_TIMEOUT: {{ nodes.cluster.discovery_timeout }}
   WAIT_FOR_HEAD: {{ nodes.cluster.wait_for_head }}
 
+{% set r = services.ray.resolved %}
 x-ray: &ray
-{% if services.ray.cpu.enabled %}
-  image: {{ services.ray.cpu.image }}
-{% if services.ray.cpu.build and services.ray.cpu.build.enabled %}
+  image: {{ r.image }}
+{% if r.build and r.build.enabled %}
   build:
-    context: {{ services.ray.cpu.build.context }}
-    dockerfile: {{ services.ray.cpu.build.dockerfile }}
-    target: {{ services.ray.cpu.build.target }}
-{% endif %}
-{% elif services.ray.gpu.enabled %}
-  image: {{ services.ray.gpu.image }}
-{% if services.ray.gpu.build and services.ray.gpu.build.enabled %}
-  build:
-    context: {{ services.ray.gpu.build.context }}
-    dockerfile: {{ services.ray.gpu.build.dockerfile }}
-    target: {{ services.ray.gpu.build.target }}
-{% endif %}
+    context: {{ r.build.context }}
+    dockerfile: {{ r.build.dockerfile }}
+    target: {{ r.build.target }}
 {% endif %}
   restart: unless-stopped
   networks:
@@ -67,15 +49,15 @@ services:
       - ray-network
 {% endif %}
 
-{% if services.ray.cpu.enabled %}
+{% if services.ray.target == "cpu" %}
   ray-cpu:
     <<: *ray
-{% if services.ray.cpu.build and services.ray.cpu.build.enabled %}
-    image: {{ services.ray.cpu.image }}
+{% if r.build and r.build.enabled %}
+    image: {{ r.image }}
     build:
-      context: {{ services.ray.cpu.build.context }}
-      dockerfile: {{ services.ray.cpu.build.dockerfile }}
-      target: {{ services.ray.cpu.build.target }}
+      context: {{ r.build.context }}
+      dockerfile: {{ r.build.dockerfile }}
+      target: {{ r.build.target }}
 {% endif %}
     container_name: {{ project.name }}-ray-cpu
     hostname: ray-cpu
@@ -83,34 +65,34 @@ services:
     shm_size: '2gb'
     environment:
       <<: *ray-environment
-      RAY_HEAD_PORT: {{ services.ray.cpu.head_port }}
-      RAY_DASHBOARD_PORT: {{ services.ray.cpu.dashboard_port }}
-      RAY_CLIENT_PORT: {{ services.ray.cpu.client_port }}
-    {% if services.ray.cpu.node_ip_address %}
-      NODE_IP_ADDRESS: {{ services.ray.cpu.node_ip_address }}
+      RAY_HEAD_PORT: {{ r.head_port }}
+      RAY_DASHBOARD_PORT: {{ r.dashboard_port }}
+      RAY_CLIENT_PORT: {{ r.client_port }}
+    {% if r.node_ip_address %}
+      NODE_IP_ADDRESS: {{ r.node_ip_address }}
     {% endif %}
-    {% if services.ray.cpu.node_manager_port %}
-      NODE_MANAGER_PORT: {{ services.ray.cpu.node_manager_port }}
+    {% if r.node_manager_port %}
+      NODE_MANAGER_PORT: {{ r.node_manager_port }}
     {% endif %}
-    {% if services.ray.cpu.object_manager_port %}
-      OBJECT_MANAGER_PORT: {{ services.ray.cpu.object_manager_port }}
+    {% if r.object_manager_port %}
+      OBJECT_MANAGER_PORT: {{ r.object_manager_port }}
     {% endif %}
-    {% if services.ray.cpu.min_worker_port %}
-      MIN_WORKER_PORT: {{ services.ray.cpu.min_worker_port }}
+    {% if r.min_worker_port %}
+      MIN_WORKER_PORT: {{ r.min_worker_port }}
     {% endif %}
-    {% if services.ray.cpu.max_worker_port %}
-      MAX_WORKER_PORT: {{ services.ray.cpu.max_worker_port }}
+    {% if r.max_worker_port %}
+      MAX_WORKER_PORT: {{ r.max_worker_port }}
     {% endif %}
-{% if services.ray.cpu.cpus %}
-      RAY_NUM_CPUS: {{ services.ray.cpu.cpus }}
+{% if r.cpus %}
+      RAY_NUM_CPUS: {{ r.cpus }}
 {% endif %}
-{% if services.ray.cpu.build and services.ray.cpu.build.enabled %}
-      USE_CONDA_ENV: "1"
+{% if r.build and r.build.enabled %}
+  USE_CONDA_ENV: "1"
 {% endif %}
     volumes:
       - ../entrypoints/ray.sh:/app/ray.sh:ro
     user: root
-{% if services.ray.cpu.build and services.ray.cpu.build.enabled %}
+{% if r.build and r.build.enabled %}
     entrypoint: ["/bin/bash", "-c", "/app/ray.sh"]
 {% else %}
     entrypoint: ["/bin/bash", "-c", "su - ray -c '/app/ray.sh'"]
@@ -120,34 +102,34 @@ services:
       health:
         condition: service_healthy
 {% endif %}
-{% if services.ray.cpu.cpus or services.ray.cpu.memory %}
+{% if r.cpus or r.memory %}
     deploy:
       resources:
         limits:
-{% if services.ray.cpu.cpus %}
-          cpus: "{{ services.ray.cpu.cpus }}"
+{% if r.cpus %}
+          cpus: "{{ r.cpus }}"
 {% endif %}
-{% if services.ray.cpu.memory %}
-          memory: {{ services.ray.cpu.memory }}
+{% if r.memory %}
+          memory: {{ r.memory }}
 {% endif %}
 {% endif %}
     ports:
-      - "{{ services.ray.cpu.dashboard_port }}:{{ services.ray.cpu.dashboard_port }}"  # Ray Dashboard
-      - "{{ services.ray.cpu.client_port }}:{{ services.ray.cpu.client_port }}"  # Ray Client
-      - "{{ services.ray.cpu.head_port }}:{{ services.ray.cpu.head_port }}"  # Head process
+      - "{{ r.dashboard_port }}:{{ r.dashboard_port }}"  # Ray Dashboard
+      - "{{ r.client_port }}:{{ r.client_port }}"  # Ray Client
+      - "{{ r.head_port }}:{{ r.head_port }}"  # Head process
     profiles:
       - ray-cpu
 {% endif %}
 
-{% if host.has_gpu and services.ray.gpu.enabled %}
+{% if services.ray.target == "gpu" %}
   ray-gpu:
-    <<: [*ray, *gpu]
-{% if services.ray.gpu.build and services.ray.gpu.build.enabled %}
-    image: {{ services.ray.gpu.image }}
+    <<: *ray
+{% if r.build and r.build.enabled %}
+    image: {{ r.image }}
     build:
-      context: {{ services.ray.gpu.build.context }}
-      dockerfile: {{ services.ray.gpu.build.dockerfile }}
-      target: {{ services.ray.gpu.build.target }}
+      context: {{ r.build.context }}
+      dockerfile: {{ r.build.dockerfile }}
+      target: {{ r.build.target }}
 {% endif %}
     container_name: {{ project.name }}-ray-gpu
     hostname: ray-gpu
@@ -155,70 +137,64 @@ services:
     shm_size: '2gb'
     environment:
       <<: *ray-environment
-      RAY_HEAD_PORT: {{ services.ray.gpu.head_port }}
-      RAY_DASHBOARD_PORT: {{ services.ray.gpu.dashboard_port }}
-      RAY_CLIENT_PORT: {{ services.ray.gpu.client_port }}
-    {% if services.ray.gpu.node_ip_address %}
-      NODE_IP_ADDRESS: {{ services.ray.gpu.node_ip_address }}
+      RAY_HEAD_PORT: {{ r.head_port }}
+      RAY_DASHBOARD_PORT: {{ r.dashboard_port }}
+      RAY_CLIENT_PORT: {{ r.client_port }}
+      RAY_NUM_GPUS: {{ r.num_gpus }}
+    {% if r.node_ip_address %}
+      NODE_IP_ADDRESS: {{ r.node_ip_address }}
     {% endif %}
-    {% if services.ray.gpu.node_manager_port %}
-      NODE_MANAGER_PORT: {{ services.ray.gpu.node_manager_port }}
+    {% if r.node_manager_port %}
+      NODE_MANAGER_PORT: {{ r.node_manager_port }}
     {% endif %}
-    {% if services.ray.gpu.object_manager_port %}
-      OBJECT_MANAGER_PORT: {{ services.ray.gpu.object_manager_port }}
+    {% if r.object_manager_port %}
+      OBJECT_MANAGER_PORT: {{ r.object_manager_port }}
     {% endif %}
-    {% if services.ray.gpu.min_worker_port %}
-      MIN_WORKER_PORT: {{ services.ray.gpu.min_worker_port }}
+    {% if r.min_worker_port %}
+      MIN_WORKER_PORT: {{ r.min_worker_port }}
     {% endif %}
-    {% if services.ray.gpu.max_worker_port %}
-      MAX_WORKER_PORT: {{ services.ray.gpu.max_worker_port }}
+    {% if r.max_worker_port %}
+      MAX_WORKER_PORT: {{ r.max_worker_port }}
     {% endif %}
-      RAY_NUM_GPUS: "1"
-{% if services.ray.gpu.cpus %}
-      RAY_NUM_CPUS: {{ services.ray.gpu.cpus }}
+{% if r.cpus %}
+      RAY_NUM_CPUS: {{ r.cpus }}
 {% endif %}
-{% if services.ray.gpu.build and services.ray.gpu.build.enabled %}
-      USE_CONDA_ENV: "1"
+{% if r.build and r.build.enabled %}
+  USE_CONDA_ENV: "1"
 {% endif %}
     volumes:
       - ../entrypoints/ray.sh:/app/ray.sh:ro
     user: root
-{% if services.ray.gpu.build and services.ray.gpu.build.enabled %}
+{% if r.build and r.build.enabled %}
     entrypoint: ["/bin/bash", "-c", "/app/ray.sh"]
 {% else %}
     entrypoint: ["/bin/bash", "-c", "su - ray -c '/app/ray.sh'"]
 {% endif %}
-{% if services.ray.cpu.enabled or services.health.enabled %}
-    depends_on:
-{% if services.ray.cpu.enabled %}
-      ray-cpu:
-        condition: service_started
-{% endif %}
 {% if services.health.enabled %}
+    depends_on:
       health:
         condition: service_healthy
-{% endif %}
 {% endif %}
     deploy:
       resources:
         reservations:
           devices:
-            - driver: nvidia
+            - driver: {{ r.runtime }}
               count: all
               capabilities: [gpu]
-{% if services.ray.gpu.cpus or services.ray.gpu.memory %}
+{% if r.cpus or r.memory %}
         limits:
-{% if services.ray.gpu.cpus %}
-          cpus: "{{ services.ray.gpu.cpus }}"
+{% if r.cpus %}
+          cpus: "{{ r.cpus }}"
 {% endif %}
-{% if services.ray.gpu.memory %}
-          memory: {{ services.ray.gpu.memory }}
+{% if r.memory %}
+          memory: {{ r.memory }}
 {% endif %}
 {% endif %}
     ports:
-      - "{{ services.ray.gpu.dashboard_port }}:{{ services.ray.gpu.dashboard_port }}"  # Ray Dashboard
-      - "{{ services.ray.gpu.client_port }}:{{ services.ray.gpu.client_port }}"  # Ray Client
-      - "{{ services.ray.gpu.head_port }}:{{ services.ray.gpu.head_port }}"  # Head process
+      - "{{ r.dashboard_port }}:{{ r.dashboard_port }}"  # Ray Dashboard
+      - "{{ r.client_port }}:{{ r.client_port }}"  # Ray Client
+      - "{{ r.head_port }}:{{ r.head_port }}"  # Head process
     profiles:
       - ray-gpu
 {% endif %}
@@ -290,11 +266,11 @@ services:
       - "{{ services.marimo.port }}:8080"
     volumes:
       - ../:/workspace
-{% if services.ray.cpu.enabled %}
+{% if services.ray.target == "cpu" %}
     depends_on:
       ray-cpu:
         condition: service_started
-{% elif host.has_gpu and services.ray.gpu.enabled %}
+{% elif services.ray.target == "gpu" %}
     depends_on:
       ray-gpu:
         condition: service_started

@@ -7,16 +7,6 @@
 # プロジェクト名: {{ project.name }}
 # バージョン: {{ project.version }}
 
-# メインクラスターからインポート
-x-gpu: &gpu
-  deploy:
-    resources:
-      reservations:
-        devices:
-          - driver: nvidia
-            count: all
-            capabilities: [gpu]
-
 x-ray-environment: &ray-environment
   HEAD_WHITELIST: "{{ nodes.head_whitelist | join(' ') }}"
   HEAD_ADDRESS_CFG: "{{ nodes.head_address or '' }}"
@@ -28,19 +18,47 @@ x-ray-environment: &ray-environment
   WAIT_FOR_HEAD: {{ nodes.cluster.wait_for_head }}
 
 {% set ray_target = cluster_test.target %}
+{% set d = services.ray.default %}
+{% set cpu = services.ray.cpu %}
+{% set gpu = services.ray.gpu %}
+
+{% set cpu_image = cpu.image or d.image %}
+{% set cpu_build = cpu.build or d.build %}
+{% set cpu_cpus = cpu.cpus or d.cpus %}
+{% set cpu_memory = cpu.memory or d.memory %}
+{% set cpu_head_port = cpu.head_port or d.head_port %}
+{% set cpu_dashboard_port = cpu.dashboard_port or d.dashboard_port %}
+{% set cpu_client_port = cpu.client_port or d.client_port %}
+{% set cpu_node_ip_address = cpu.node_ip_address or d.node_ip_address %}
+{% set cpu_node_manager_port = cpu.node_manager_port or d.node_manager_port %}
+{% set cpu_object_manager_port = cpu.object_manager_port or d.object_manager_port %}
+{% set cpu_min_worker_port = cpu.min_worker_port or d.min_worker_port %}
+{% set cpu_max_worker_port = cpu.max_worker_port or d.max_worker_port %}
+
+{% set gpu_image = gpu.image or d.image %}
+{% set gpu_build = gpu.build or d.build %}
+{% set gpu_cpus = gpu.cpus or d.cpus %}
+{% set gpu_memory = gpu.memory or d.memory %}
+{% set gpu_head_port = gpu.head_port or d.head_port %}
+{% set gpu_dashboard_port = gpu.dashboard_port or d.dashboard_port %}
+{% set gpu_client_port = gpu.client_port or d.client_port %}
+{% set gpu_node_ip_address = gpu.node_ip_address or d.node_ip_address %}
+{% set gpu_node_manager_port = gpu.node_manager_port or d.node_manager_port %}
+{% set gpu_object_manager_port = gpu.object_manager_port or d.object_manager_port %}
+{% set gpu_min_worker_port = gpu.min_worker_port or d.min_worker_port %}
+{% set gpu_max_worker_port = gpu.max_worker_port or d.max_worker_port %}
+{% set gpu_num_gpus = gpu.num_gpus %}
+{% set gpu_runtime = gpu.runtime %}
+
 {% set target_host = "ray-gpu" if ray_target == "gpu" else "ray-cpu" %}
-{% set target_head_port = services.ray.gpu.head_port if ray_target == "gpu" else services.ray.cpu.head_port %}
-{% set target_dashboard_port = services.ray.gpu.dashboard_port if ray_target == "gpu" else services.ray.cpu.dashboard_port %}
-{% set target_client_port = services.ray.gpu.client_port if ray_target == "gpu" else services.ray.cpu.client_port %}
-{% set cpu_head_port = services.ray.cpu.head_port %}
-{% set cpu_dashboard_port = services.ray.cpu.dashboard_port %}
-{% set cpu_client_port = services.ray.cpu.client_port %}
+{% set target_head_port = gpu_head_port if ray_target == "gpu" else cpu_head_port %}
+{% set target_dashboard_port = gpu_dashboard_port if ray_target == "gpu" else cpu_dashboard_port %}
+{% set target_client_port = gpu_client_port if ray_target == "gpu" else cpu_client_port %}
 
 x-ray: &ray
   restart: unless-stopped
 
 services:
-  # Main cluster services
 {% if services.health.enabled %}
   health:
     image: python:3.12-alpine
@@ -60,105 +78,127 @@ services:
       - ray-network
 {% endif %}
 
-{% if services.ray.cpu.enabled %}
   ray-cpu:
     <<: *ray
-    image: {{ services.ray.cpu.image }}
+    image: {{ cpu_image }}
+{% if cpu_build and cpu_build.enabled %}
+    build:
+      context: {{ cpu_build.context }}
+      dockerfile: {{ cpu_build.dockerfile }}
+      target: {{ cpu_build.target }}
+{% endif %}
     container_name: {{ project.name }}-ray-cpu
     hostname: ray-cpu
     restart: "no"
     shm_size: '2gb'
     environment:
       <<: *ray-environment
-      RAY_HEAD_PORT: {{ services.ray.cpu.head_port }}
-      RAY_DASHBOARD_PORT: {{ services.ray.cpu.dashboard_port }}
-      RAY_CLIENT_PORT: {{ services.ray.cpu.client_port }}
-    {% if services.ray.cpu.node_ip_address %}
-      NODE_IP_ADDRESS: {{ services.ray.cpu.node_ip_address }}
+      RAY_HEAD_PORT: {{ cpu_head_port }}
+      RAY_DASHBOARD_PORT: {{ cpu_dashboard_port }}
+      RAY_CLIENT_PORT: {{ cpu_client_port }}
+    {% if cpu_node_ip_address %}
+      NODE_IP_ADDRESS: {{ cpu_node_ip_address }}
     {% endif %}
-    {% if services.ray.cpu.node_manager_port %}
-      NODE_MANAGER_PORT: {{ services.ray.cpu.node_manager_port }}
+    {% if cpu_node_manager_port %}
+      NODE_MANAGER_PORT: {{ cpu_node_manager_port }}
     {% endif %}
-    {% if services.ray.cpu.object_manager_port %}
-      OBJECT_MANAGER_PORT: {{ services.ray.cpu.object_manager_port }}
+    {% if cpu_object_manager_port %}
+      OBJECT_MANAGER_PORT: {{ cpu_object_manager_port }}
     {% endif %}
-    {% if services.ray.cpu.min_worker_port %}
-      MIN_WORKER_PORT: {{ services.ray.cpu.min_worker_port }}
+    {% if cpu_min_worker_port %}
+      MIN_WORKER_PORT: {{ cpu_min_worker_port }}
     {% endif %}
-    {% if services.ray.cpu.max_worker_port %}
-      MAX_WORKER_PORT: {{ services.ray.cpu.max_worker_port }}
+    {% if cpu_max_worker_port %}
+      MAX_WORKER_PORT: {{ cpu_max_worker_port }}
     {% endif %}
-{% if services.ray.cpu.cpus %}
-      RAY_NUM_CPUS: {{ services.ray.cpu.cpus }}
+{% if cpu_cpus %}
+      RAY_NUM_CPUS: {{ cpu_cpus }}
 {% endif %}
+{% if cpu_build and cpu_build.enabled %}
       USE_CONDA_ENV: "1"
+{% endif %}
     volumes:
       - ../entrypoints/ray.sh:/app/ray.sh:ro
       - ../_build/logs/ray-cpu/tmp-ray:/tmp/ray
     user: root
+{% if cpu_build and cpu_build.enabled %}
     entrypoint: ["/bin/bash", "-c", "/app/ray.sh"]
+{% else %}
+    entrypoint: ["/bin/bash", "-c", "su -m ray -c '/app/ray.sh'"]
+{% endif %}
 {% if services.health.enabled %}
     depends_on:
       health:
         condition: service_healthy
 {% endif %}
-{% if services.ray.cpu.cpus or services.ray.cpu.memory %}
+{% if cpu_cpus or cpu_memory %}
     deploy:
       resources:
         limits:
-{% if services.ray.cpu.cpus %}
-          cpus: "{{ services.ray.cpu.cpus }}"
+{% if cpu_cpus %}
+          cpus: "{{ cpu_cpus }}"
 {% endif %}
-{% if services.ray.cpu.memory %}
-          memory: {{ services.ray.cpu.memory }}
+{% if cpu_memory %}
+          memory: {{ cpu_memory }}
 {% endif %}
 {% endif %}
     ports:
-      - "{{ services.ray.cpu.dashboard_port }}:{{ services.ray.cpu.dashboard_port }}"
-      - "{{ services.ray.cpu.client_port }}:{{ services.ray.cpu.client_port }}"
-      - "{{ services.ray.cpu.head_port }}:{{ services.ray.cpu.head_port }}"
+      - "{{ cpu_dashboard_port }}:{{ cpu_dashboard_port }}"
+      - "{{ cpu_client_port }}:{{ cpu_client_port }}"
+      - "{{ cpu_head_port }}:{{ cpu_head_port }}"
     networks:
       - ray-network
-{% endif %}
 
-{% if host.has_gpu and services.ray.gpu.enabled %}
+{% if host.has_gpu %}
   ray-gpu:
-    <<: [*ray, *gpu]
-    image: {{ services.ray.gpu.image }}
+    <<: *ray
+    image: {{ gpu_image }}
+{% if gpu_build and gpu_build.enabled %}
+    build:
+      context: {{ gpu_build.context }}
+      dockerfile: {{ gpu_build.dockerfile }}
+      target: {{ gpu_build.target }}
+{% endif %}
     container_name: {{ project.name }}-ray-gpu
     hostname: ray-gpu
     restart: "no"
     shm_size: '2gb'
     environment:
       <<: *ray-environment
-      RAY_HEAD_PORT: {{ services.ray.gpu.head_port }}
-      RAY_DASHBOARD_PORT: {{ services.ray.gpu.dashboard_port }}
-      RAY_CLIENT_PORT: {{ services.ray.gpu.client_port }}
-    {% if services.ray.gpu.node_ip_address %}
-      NODE_IP_ADDRESS: {{ services.ray.gpu.node_ip_address }}
+      RAY_HEAD_PORT: {{ gpu_head_port }}
+      RAY_DASHBOARD_PORT: {{ gpu_dashboard_port }}
+      RAY_CLIENT_PORT: {{ gpu_client_port }}
+      RAY_NUM_GPUS: {{ gpu_num_gpus }}
+    {% if gpu_node_ip_address %}
+      NODE_IP_ADDRESS: {{ gpu_node_ip_address }}
     {% endif %}
-    {% if services.ray.gpu.node_manager_port %}
-      NODE_MANAGER_PORT: {{ services.ray.gpu.node_manager_port }}
+    {% if gpu_node_manager_port %}
+      NODE_MANAGER_PORT: {{ gpu_node_manager_port }}
     {% endif %}
-    {% if services.ray.gpu.object_manager_port %}
-      OBJECT_MANAGER_PORT: {{ services.ray.gpu.object_manager_port }}
+    {% if gpu_object_manager_port %}
+      OBJECT_MANAGER_PORT: {{ gpu_object_manager_port }}
     {% endif %}
-    {% if services.ray.gpu.min_worker_port %}
-      MIN_WORKER_PORT: {{ services.ray.gpu.min_worker_port }}
+    {% if gpu_min_worker_port %}
+      MIN_WORKER_PORT: {{ gpu_min_worker_port }}
     {% endif %}
-    {% if services.ray.gpu.max_worker_port %}
-      MAX_WORKER_PORT: {{ services.ray.gpu.max_worker_port }}
+    {% if gpu_max_worker_port %}
+      MAX_WORKER_PORT: {{ gpu_max_worker_port }}
     {% endif %}
-      RAY_NUM_GPUS: "1"
-{% if services.ray.gpu.cpus %}
-      RAY_NUM_CPUS: {{ services.ray.gpu.cpus }}
+{% if gpu_cpus %}
+      RAY_NUM_CPUS: {{ gpu_cpus }}
 {% endif %}
+{% if gpu_build and gpu_build.enabled %}
       USE_CONDA_ENV: "1"
+{% endif %}
     volumes:
       - ../entrypoints/ray.sh:/app/ray.sh:ro
       - ../_build/logs/ray-gpu/tmp-ray:/tmp/ray
     user: root
+{% if gpu_build and gpu_build.enabled %}
     entrypoint: ["/bin/bash", "-c", "/app/ray.sh"]
+{% else %}
+    entrypoint: ["/bin/bash", "-c", "su -m ray -c '/app/ray.sh'"]
+{% endif %}
 {% if services.health.enabled %}
     depends_on:
       health:
@@ -168,30 +208,29 @@ services:
       resources:
         reservations:
           devices:
-            - driver: nvidia
+            - driver: {{ gpu_runtime }}
               count: all
               capabilities: [gpu]
-{% if services.ray.gpu.cpus or services.ray.gpu.memory %}
+{% if gpu_cpus or gpu_memory %}
         limits:
-{% if services.ray.gpu.cpus %}
-          cpus: "{{ services.ray.gpu.cpus }}"
+{% if gpu_cpus %}
+          cpus: "{{ gpu_cpus }}"
 {% endif %}
-{% if services.ray.gpu.memory %}
-          memory: {{ services.ray.gpu.memory }}
+{% if gpu_memory %}
+          memory: {{ gpu_memory }}
 {% endif %}
 {% endif %}
     ports:
-      - "{{ services.ray.gpu.dashboard_port }}:{{ services.ray.gpu.dashboard_port }}"
-      - "{{ services.ray.gpu.client_port }}:{{ services.ray.gpu.client_port }}"
-      - "{{ services.ray.gpu.head_port }}:{{ services.ray.gpu.head_port }}"
+      - "{{ gpu_dashboard_port }}:{{ gpu_dashboard_port }}"
+      - "{{ gpu_client_port }}:{{ gpu_client_port }}"
+      - "{{ gpu_head_port }}:{{ gpu_head_port }}"
     networks:
       - ray-network
 {% endif %}
 
-  # Test containers - Network isolated
   test-ray-client:
     <<: *ray
-    image: {{ services.ray.gpu.image if ray_target == "gpu" else services.ray.cpu.image }}
+    image: {{ gpu_image if ray_target == "gpu" else cpu_image }}
     container_name: {{ project.name }}-test-client
     hostname: test-ray-client
     restart: "no"
@@ -216,24 +255,21 @@ services:
         apt-get update -qq && apt-get install -y -qq curl iputils-ping dnsutils > /dev/null 2>&1
         echo "=== Test Ray Client Network Test ==="
         echo "Testing connectivity to main cluster..."
-        
-        # DNS/Network connectivity test
+
         ping -c 2 {{ target_host }} || echo "⚠ Cannot ping {{ target_host }}"
       {% if services.health.enabled %}
         ping -c 2 health || echo "⚠ Cannot ping health"
       {% endif %}
-        
-        # Port connectivity test
+
         timeout 2 bash -c "</dev/tcp/{{ target_host }}/{{ target_head_port }}" && echo "✓ {{ target_host }}:{{ target_head_port }} reachable" || echo "✗ {{ target_host }}:{{ target_head_port }} unreachable"
         {% if services.health.enabled %}
           timeout 2 bash -c "</dev/tcp/health/{{ services.health.port }}" && echo "✓ health:{{ services.health.port }} reachable" || echo "✗ health:{{ services.health.port }} unreachable"
         {% endif %}
-        
-        # Ray client connection test
+
         echo ""
         echo "Testing Ray client connection..."
-        su - ray -c "$RAY_PYTHON_BIN -c 'import ray; ray.init(\"ray://{{ host.ip_address }}:{{ target_client_port }}\", ignore_reinit_error=True); print(\"✓ Ray client connected\"); print(\"Resources:\", ray.cluster_resources()); ray.shutdown()' || echo '✗ Ray client connection failed'"
-        
+        su - ray -c "$$RAY_PYTHON_BIN -c 'import ray; ray.init(\"ray://{{ host.ip_address }}:{{ target_client_port }}\", ignore_reinit_error=True); print(\"✓ Ray client connected\"); print(\"Resources:\", ray.cluster_resources()); ray.shutdown()' || echo '✗ Ray client connection failed'"
+
         echo ""
         echo "Test client container will sleep for debugging..."
         tail -f /dev/null
@@ -247,7 +283,7 @@ services:
 
   test-ray-worker:
     <<: *ray
-    image: {{ services.ray.gpu.image if ray_target == "gpu" else services.ray.cpu.image }}
+    image: {{ gpu_image if ray_target == "gpu" else cpu_image }}
     container_name: {{ project.name }}-test-worker
     hostname: test-ray-worker
     restart: "no"
@@ -260,7 +296,6 @@ services:
       RAY_HEAD_PORT: {{ target_head_port }}
       RAY_DASHBOARD_PORT: {{ target_dashboard_port }}
       RAY_CLIENT_PORT: {{ target_client_port }}
-      NODE_IP_ADDRESS: {{ host.ip_address }}
       NODE_MANAGER_PORT: {{ cluster_test.worker_node_manager_port }}
       OBJECT_MANAGER_PORT: {{ cluster_test.worker_object_manager_port }}
       MIN_WORKER_PORT: {{ cluster_test.worker_min_worker_port }}
@@ -277,19 +312,17 @@ services:
         apt-get update -qq && apt-get install -y -qq curl iputils-ping > /dev/null 2>&1
         echo "=== Test Ray Worker Network Test ==="
         echo "Testing connectivity to main cluster..."
-        
-        # Network connectivity test
+
         ping -c 2 {{ target_host }} ||  echo "⚠ Cannot ping {{ target_host }}"
         timeout 2 bash -c "</dev/tcp/{{ target_host }}/{{ target_head_port }}" && echo "✓ {{ target_host }}:{{ target_head_port }} reachable" || echo "✗ {{ target_host }}:{{ target_head_port }} unreachable"
         {% if services.health.enabled %}
           timeout 2 bash -c "</dev/tcp/health/{{ services.health.port }}" && echo "✓ health:{{ services.health.port }} reachable" || echo "✗ health:{{ services.health.port }} unreachable"
         {% endif %}
-        
-        # Verify ray.sh compatibility (should start as worker)
+
         echo ""
         echo "Starting Ray worker node using ray.sh..."
         echo "This node is NOT in whitelist, so should start as WORKER automatically"
-        
+
         export USE_CONDA_ENV=1
         /app/ray.sh
     depends_on:
@@ -304,10 +337,10 @@ services:
     networks:
       - test-network
 
-{% if ray_target == "gpu" and services.ray.cpu.enabled %}
+{% if ray_target == "gpu" %}
   test-ray-worker-cpu:
     <<: *ray
-    image: {{ services.ray.cpu.image }}
+    image: {{ cpu_image }}
     container_name: {{ project.name }}-test-worker-cpu
     hostname: test-ray-worker-cpu
     restart: "no"
@@ -320,7 +353,6 @@ services:
       RAY_HEAD_PORT: {{ cpu_head_port }}
       RAY_DASHBOARD_PORT: {{ cpu_dashboard_port }}
       RAY_CLIENT_PORT: {{ cpu_client_port }}
-      NODE_IP_ADDRESS: {{ host.ip_address }}
       NODE_MANAGER_PORT: {{ cluster_test.worker_cpu_node_manager_port }}
       OBJECT_MANAGER_PORT: {{ cluster_test.worker_cpu_object_manager_port }}
       MIN_WORKER_PORT: {{ cluster_test.worker_cpu_min_worker_port }}
@@ -368,8 +400,7 @@ networks:
     ipam:
       config:
         - subnet: {{ network.subnet }}
-  
-  # Isolated test network
+
   test-network:
     driver: bridge
     ipam:

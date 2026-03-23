@@ -71,21 +71,29 @@ class BuildConfig(BaseModel):
     context: str = Field(default=".", description="Build context path")
 
 
-class RayNodeConfig(BaseModel):
-    """Base Ray node configuration"""
+class RayNodeSchema(BaseModel):
+    """Base Ray node schema (user input).
 
-    enabled: bool = Field(default=True, description="Enable Ray service")
-    image: Optional[str] = Field(default=None, description="Docker image")
+    All fields Optional; None means 'use ray.default'.
+    """
+
+    image: Optional[str] = Field(default=None, description="Docker image override")
     build: Optional[BuildConfig] = Field(
-        default=None, description="Docker build configuration"
+        default=None, description="Docker build configuration override"
     )
     cpus: Optional[float] = Field(default=None, gt=0, description="CPU limit")
     memory: Optional[str] = Field(
         default=None, description="Memory limit (e.g., '8g', '512m')"
     )
-    dashboard_port: int = Field(ge=1024, le=65535, description="Ray Dashboard port")
-    client_port: int = Field(ge=1024, le=65535, description="Ray Client port")
-    head_port: int = Field(ge=1024, le=65535, description="Head Ray process port")
+    head_port: Optional[int] = Field(
+        default=None, ge=1024, le=65535, description="Head Ray process port"
+    )
+    dashboard_port: Optional[int] = Field(
+        default=None, ge=1024, le=65535, description="Ray Dashboard port"
+    )
+    client_port: Optional[int] = Field(
+        default=None, ge=1024, le=65535, description="Ray Client port"
+    )
     node_ip_address: Optional[str] = Field(
         default=None,
         description=(
@@ -134,7 +142,6 @@ class RayNodeConfig(BaseModel):
         if not re.match(r"^\d+[gmGM]$", v):
             raise ValueError("Memory must be format like '8g' or '512m'")
 
-        # Extract numeric value and check if it's greater than 0
         value = int(v[:-1])
         if value <= 0:
             raise ValueError("Memory value must be greater than 0")
@@ -142,7 +149,7 @@ class RayNodeConfig(BaseModel):
         return v.lower()
 
     @model_validator(mode="after")
-    def validate_worker_port_range(self) -> "RayNodeConfig":
+    def validate_worker_port_range(self) -> "RayNodeSchema":
         """Validate worker port range consistency"""
         min_port = self.min_worker_port
         max_port = self.max_worker_port
@@ -159,67 +166,154 @@ class RayNodeConfig(BaseModel):
         return self
 
 
-class RayCPUConfig(RayNodeConfig):
-    """Ray CPU service configuration"""
-
-    image: Optional[str] = Field(default=None, description="Docker image")
-    dashboard_port: int = Field(
-        default=8265, ge=1024, le=65535, description="Ray Dashboard port"
-    )
-    client_port: int = Field(
-        default=10001, ge=1024, le=65535, description="Ray Client port"
-    )
-    head_port: int = Field(
-        default=6379, ge=1024, le=65535, description="Head Ray process port"
-    )
+class RayCPUSchema(RayNodeSchema):
+    """Ray CPU node schema (no new fields; all resolved from ray.default)."""
 
 
-class RayGPUConfig(RayNodeConfig):
-    """Ray GPU service configuration"""
+class RayGPUSchema(RayNodeSchema):
+    """Ray GPU node schema (adds GPU-specific fields)."""
 
-    image: Optional[str] = Field(default=None, description="Docker image")
-    dashboard_port: int = Field(
-        default=8266, ge=1024, le=65535, description="Ray Dashboard port"
-    )
-    client_port: int = Field(
-        default=10002, ge=1024, le=65535, description="Ray Client port"
-    )
-    head_port: int = Field(
-        default=6380, ge=1024, le=65535, description="Head Ray process port"
-    )
+    num_gpus: int = Field(default=1, ge=0, description="Number of GPUs for Ray")
+    runtime: str = Field(default="nvidia", description="Docker GPU runtime")
+
+
+class RayDefaultConfig(BaseModel):
+    """
+    Shared fallback values for ray.cpu and ray.gpu.
+    Some fields can be omitted (None), including resource limits.
+    """
+
+    image: str = Field(description="Base Docker image (e.g. 'rayproject/ray:latest')")
+    build: BuildConfig = Field(description="Docker build configuration")
+    cpus: Optional[float] = Field(default=None, gt=0, description="CPU limit")
+    memory: Optional[str] = Field(default=None, description="Memory limit (e.g. '8g')")
+    head_port: int = Field(ge=1024, le=65535, description="Head Ray process port")
+    dashboard_port: int = Field(ge=1024, le=65535, description="Ray Dashboard port")
+    client_port: int = Field(ge=1024, le=65535, description="Ray Client port")
+    # Environment-dependent: optional
+    node_ip_address: Optional[str] = Field(default=None)
+    node_manager_port: Optional[int] = Field(default=None, ge=1024, le=65535)
+    object_manager_port: Optional[int] = Field(default=None, ge=1024, le=65535)
+    min_worker_port: Optional[int] = Field(default=None, ge=1024, le=65535)
+    max_worker_port: Optional[int] = Field(default=None, ge=1024, le=65535)
+
+    @field_validator("memory")
+    @classmethod
+    def validate_memory(cls, v: Optional[str]) -> Optional[str]:
+        """Validate memory format (e.g., '8g', '16G', '512m')"""
+        if v is None:
+            return v
+        if not re.match(r"^\d+[gmGM]$", v):
+            raise ValueError("Memory must be format like '8g' or '512m'")
+        value = int(v[:-1])
+        if value <= 0:
+            raise ValueError("Memory value must be greater than 0")
+        return v.lower()
+
+
+class RayNodeResolved(BaseModel):
+    """
+    Fallback-resolved confirmed values shared by CPU and GPU nodes.
+    'enabled' is absent — Ray failure = stack failure, so false is meaningless.
+    RayCpuResolved and RayGpuResolved inherit from this class.
+    """
+
+    target: Literal["cpu", "gpu"]
+    image: str | None
+    build: BuildConfig | None
+    cpus: Optional[float]
+    memory: Optional[str]
+    head_port: int
+    dashboard_port: int
+    client_port: int
+    node_ip_address: Optional[str]
+    node_manager_port: Optional[int]
+    object_manager_port: Optional[int]
+    min_worker_port: Optional[int]
+    max_worker_port: Optional[int]
+
+    @model_validator(mode="after")
+    def validate_image_or_build(self) -> "RayNodeResolved":
+        """Validate that either image or build is set"""
+        if self.image is None and self.build is None:
+            raise ValueError("Either image or build must be set")
+        return self
+
+
+class RayCpuResolved(RayNodeResolved):
+    """Resolved CPU node values (no new fields beyond RayNodeResolved)."""
+
+
+class RayGpuResolved(RayNodeResolved):
+    """Resolved GPU node values (adds GPU-specific fields)."""
+
+    num_gpus: int
+    runtime: str
 
 
 class RayConfig(BaseModel):
     """Ray service configuration"""
 
-    image: Optional[str] = Field(default=None, description="Default Docker image")
-    build: Optional[BuildConfig] = Field(
-        default=None, description="Default Docker build configuration"
+    target: Literal["cpu", "gpu"] = Field(
+        description="Node type to launch. Either 'cpu' or 'gpu'."
     )
-    cpu: RayCPUConfig = Field(default_factory=RayCPUConfig)
-    gpu: RayGPUConfig = Field(default_factory=RayGPUConfig)
+    default: RayDefaultConfig = Field(
+        description=(
+            "Shared fallback values" " (all fields required; no hardcoded defaults)"
+        )
+    )
+    cpu: RayCPUSchema = Field(default_factory=RayCPUSchema)
+    gpu: RayGPUSchema = Field(default_factory=RayGPUSchema)
 
-    def model_post_init(self, __context: dict[str, object]):
-        """Propagate shared settings to CPU/GPU configs if not set"""
-        # Propagate image
-        if self.image:
-            if self.cpu.image is None:
-                self.cpu.image = self.image
-            if self.gpu.image is None:
-                self.gpu.image = self.image
+    # Populated by model_post_init; excluded from serialization
+    resolved: Optional[RayNodeResolved] = Field(default=None, exclude=True)
 
-        # Set defaults if still None
-        if self.cpu.image is None:
-            self.cpu.image = "rayproject/ray:latest"
-        if self.gpu.image is None:
-            self.gpu.image = "rayproject/ray:latest-gpu"
+    def model_post_init(self, __context: object) -> None:
+        """Resolve fallback values into a typed Resolved object."""
+        if self.target == "cpu":
+            self.resolved = self._resolve_cpu()
+        else:
+            self.resolved = self._resolve_gpu()
 
-        # Propagate build config
-        if self.build:
-            if self.cpu.build is None:
-                self.cpu.build = self.build.model_copy()
-            if self.gpu.build is None:
-                self.gpu.build = self.build.model_copy()
+    def _resolve_cpu(self) -> RayCpuResolved:
+        d, s = self.default, self.cpu
+
+        return RayCpuResolved(
+            target="cpu",
+            build=s.build or d.build,
+            image=s.image or d.image,
+            cpus=s.cpus or d.cpus,
+            memory=s.memory or d.memory,
+            head_port=s.head_port or d.head_port,
+            dashboard_port=s.dashboard_port or d.dashboard_port,
+            client_port=s.client_port or d.client_port,
+            node_ip_address=s.node_ip_address or d.node_ip_address,
+            node_manager_port=s.node_manager_port or d.node_manager_port,
+            object_manager_port=s.object_manager_port or d.object_manager_port,
+            min_worker_port=s.min_worker_port or d.min_worker_port,
+            max_worker_port=s.max_worker_port or d.max_worker_port,
+        )
+
+    def _resolve_gpu(self) -> RayGpuResolved:
+        d, s = self.default, self.gpu
+
+        return RayGpuResolved(
+            target="gpu",
+            build=s.build or d.build,
+            image=s.image or d.image,
+            cpus=s.cpus or d.cpus,
+            memory=s.memory or d.memory,
+            head_port=s.head_port or d.head_port,
+            dashboard_port=s.dashboard_port or d.dashboard_port,
+            client_port=s.client_port or d.client_port,
+            node_ip_address=s.node_ip_address or d.node_ip_address,
+            node_manager_port=s.node_manager_port or d.node_manager_port,
+            object_manager_port=s.object_manager_port or d.object_manager_port,
+            min_worker_port=s.min_worker_port or d.min_worker_port,
+            max_worker_port=s.max_worker_port or d.max_worker_port,
+            num_gpus=s.num_gpus,
+            runtime=s.runtime,
+        )
 
 
 class MLflowPostgresConfig(BaseModel):
@@ -276,7 +370,7 @@ class HealthConfig(BaseModel):
 class ServicesConfig(BaseModel):
     """Services configuration"""
 
-    ray: RayConfig = Field(default_factory=RayConfig)
+    ray: RayConfig
     mlflow: MLflowConfig = Field(default_factory=MLflowConfig)
     redis: RedisConfig = Field(default_factory=RedisConfig)
     marimo: MarimoConfig = Field(default_factory=MarimoConfig)
@@ -425,7 +519,7 @@ class Config(BaseSettings):
     host: HostConfig = Field(default_factory=HostConfig)
     project: ProjectConfig
     network: NetworkConfig = Field(default_factory=NetworkConfig)
-    services: ServicesConfig = Field(default_factory=ServicesConfig)
+    services: ServicesConfig
     volumes: VolumesConfig = Field(default_factory=VolumesConfig)
     cluster_test: ClusterTestConfig = Field(default_factory=ClusterTestConfig)
     nodes: NodesConfig = Field(default_factory=NodesConfig)
@@ -435,7 +529,7 @@ class Config(BaseSettings):
         """Check for port conflicts across services"""
         ports: list[tuple[str, int]] = []
 
-        def add_optional_ray_ports(prefix: str, ray_cfg: RayNodeConfig):
+        def add_optional_ray_ports(prefix: str, ray_cfg: RayNodeResolved):
             if ray_cfg.node_manager_port is not None:
                 ports.append((f"{prefix}-node-manager", ray_cfg.node_manager_port))
             if ray_cfg.object_manager_port is not None:
@@ -456,26 +550,18 @@ class Config(BaseSettings):
                     f"{', '.join(conflicts)}"
                 )
 
-        # Ray ports
-        if self.services.ray.cpu.enabled:
+        # Ray ports (cpu / gpu mutually exclusive; only active target registered)
+        ray_resolved = self.services.ray.resolved
+        if ray_resolved is not None:
+            prefix = f"ray-{ray_resolved.target}"
             ports.extend(
                 [
-                    ("ray-cpu-dashboard", self.services.ray.cpu.dashboard_port),
-                    ("ray-cpu-client", self.services.ray.cpu.client_port),
-                    ("ray-cpu-head", self.services.ray.cpu.head_port),
+                    (f"{prefix}-dashboard", ray_resolved.dashboard_port),
+                    (f"{prefix}-client", ray_resolved.client_port),
+                    (f"{prefix}-head", ray_resolved.head_port),
                 ]
             )
-            add_optional_ray_ports("ray-cpu", self.services.ray.cpu)
-
-        if self.services.ray.gpu.enabled:
-            ports.extend(
-                [
-                    ("ray-gpu-dashboard", self.services.ray.gpu.dashboard_port),
-                    ("ray-gpu-client", self.services.ray.gpu.client_port),
-                    ("ray-gpu-head", self.services.ray.gpu.head_port),
-                ]
-            )
-            add_optional_ray_ports("ray-gpu", self.services.ray.gpu)
+            add_optional_ray_ports(prefix, ray_resolved)
 
         # Cluster test worker ports
         ports.extend(

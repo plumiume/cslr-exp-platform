@@ -73,11 +73,8 @@ def up(
                 )
                 raise typer.Exit(1)
 
-        # Select ray-gpu if GPU is available and enabled, otherwise ray-cpu
-        if config.host.has_gpu and config.services.ray.gpu.enabled:
-            profile = "ray-gpu"
-        elif config.services.ray.cpu.enabled:
-            profile = "ray-cpu"
+        # Select profile based on configured target
+        profile = f"ray-{config.services.ray.target}"
 
     compose_args: list[str] = []
     if profile:
@@ -271,12 +268,14 @@ def status(
                 )
                 table.add_row(*row_data)
 
-        # Ray CPU service
-        if config.services.ray.cpu.enabled:
-            is_running = "ray-cpu" in running_services
+        # Ray service
+        if config.services.ray.resolved is not None:
+            r = config.services.ray.resolved
+            service_name = f"ray-{r.target}"
+            is_running = service_name in running_services
             if all or is_running:
                 # Dashboard
-                row_data = ["ray-cpu"]
+                row_data = [service_name]
                 if all:
                     row_data.append(
                         "[green]Running[/green]" if is_running else "[dim]Stopped[/dim]"
@@ -284,12 +283,12 @@ def status(
                 row_data.extend(
                     [
                         "📊 Dashboard",
-                        f"http://{host_ip}:{config.services.ray.cpu.dashboard_port}",
+                        f"http://{host_ip}:{r.dashboard_port}",
                     ]
                 )
                 table.add_row(*row_data)
                 # Client
-                row_data = ["ray-cpu"]
+                row_data = [service_name]
                 if all:
                     row_data.append(
                         "[green]Running[/green]" if is_running else "[dim]Stopped[/dim]"
@@ -297,38 +296,7 @@ def status(
                 row_data.extend(
                     [
                         "🔌 Client",
-                        f"ray://{host_ip}:{config.services.ray.cpu.client_port}",
-                    ]
-                )
-                table.add_row(*row_data)
-
-        # Ray GPU service
-        if config.services.ray.gpu.enabled:
-            is_running = "ray-gpu" in running_services
-            if all or is_running:
-                # Dashboard
-                row_data = ["ray-gpu"]
-                if all:
-                    row_data.append(
-                        "[green]Running[/green]" if is_running else "[dim]Stopped[/dim]"
-                    )
-                row_data.extend(
-                    [
-                        "📊 Dashboard",
-                        f"http://{host_ip}:{config.services.ray.gpu.dashboard_port}",
-                    ]
-                )
-                table.add_row(*row_data)
-                # Client
-                row_data = ["ray-gpu"]
-                if all:
-                    row_data.append(
-                        "[green]Running[/green]" if is_running else "[dim]Stopped[/dim]"
-                    )
-                row_data.extend(
-                    [
-                        "🔌 Client",
-                        f"ray://{host_ip}:{config.services.ray.gpu.client_port}",
+                        f"ray://{host_ip}:{r.client_port}",
                     ]
                 )
                 table.add_row(*row_data)

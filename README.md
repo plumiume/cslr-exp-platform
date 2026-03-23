@@ -130,20 +130,24 @@ uv run pytest
 ```yaml
 services:
   ray:
-    cpu:
-      enabled: true
-      image: rayproject/ray:latest
+      target: cpu
+      default:
+         image: rayproject/ray:latest
+         build:
+            enabled: false
+            dockerfile: ../Dockerfile
+            target: ray-runtime
+            context: ..
          cpus: 4
-      memory: 8g
-      head_port: 6379
-      dashboard_port: 8265
-      client_port: 10001
+         memory: 8g
+         head_port: 6379
+         dashboard_port: 8265
+         client_port: 20001
+      cpu: {}
     gpu:
-      enabled: true
       image: rayproject/ray:latest-gpu
-      head_port: 6380
-      dashboard_port: 8266
-      client_port: 10002
+         num_gpus: 1
+         runtime: nvidia
   redis:
     port: 6381  # ホスト側ポート（コンテナ内は6379）
 
@@ -163,6 +167,9 @@ nodes:
 ### config.yaml の `nodes` セクション
 
 ノードのホワイトリストとヘルスチェック設定。
+
+`services.ray.target` は通常運用での起動ノードを選択し、
+`cluster_test.target` は test-cluster の接続先を独立指定できます。
 
 **重要**: `head_whitelist` には、**この設定を適用するマシンから到達可能なホスト名**を指定してください。
 

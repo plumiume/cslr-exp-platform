@@ -94,7 +94,7 @@ if [ "$IN_WHITELIST" = "true" ]; then
     HEALTH_OK=false
     attempt=1
     while [ "$attempt" -le "$HEALTH_MAX_RETRIES" ]; do
-        if timeout "${HEALTH_TIMEOUT}" curl -sf "$HEALTH_URL" > /dev/null 2>&1; then
+        if "$PYTHON_EXEC" -c 'import os, urllib.request; urllib.request.urlopen(os.environ["HEALTH_URL"], timeout=float(os.environ.get("HEALTH_TIMEOUT", "1")))' > /dev/null 2>&1; then
             HEALTH_OK=true
             break
         fi

@@ -123,7 +123,12 @@ class WorkspaceManager:
 
         return config
 
-    def render_template(self, config: Config, template_name: str | None = None) -> str:
+    def render_template(
+        self,
+        config: Config,
+        template_name: str | None = None,
+        force_test_head_whitelist: bool = False,
+    ) -> str:
         """Render Jinja2 template with config"""
         if not (self.templates_dir.exists() and self.templates_dir.is_dir()):
             console.print(
@@ -138,7 +143,13 @@ class WorkspaceManager:
         if template_name is None:
             template_name = self.template_path.name
         template = env.get_template(template_name)
-        return template.render(**config.model_dump())
+        data = config.model_dump()
+        ray_resolved = config.services.ray.resolved
+        if ray_resolved is not None:
+            data["services"]["ray"]["resolved"] = ray_resolved.model_dump()
+        if force_test_head_whitelist:
+            data["nodes"]["head_whitelist"] = ["ray-cpu", "ray-gpu"]
+        return template.render(**data)
 
     def generate_compose_file(self) -> Config:
         """Generate compose.yaml from template"""
@@ -197,26 +208,18 @@ class WorkspaceManager:
             progress.add_task("Detecting host state...", total=None)
             config = self.detect_host_state(config)
 
-            if config.cluster_test.target == "cpu":
-                if not config.services.ray.cpu.enabled:
-                    raise ValueError(
-                        "cluster_test.target=cpu ですが"
-                        " services.ray.cpu.enabled が false です"
-                    )
-
             if config.cluster_test.target == "gpu":
                 if not config.host.has_gpu:
                     raise ValueError(
                         "cluster_test.target=gpu ですが host.has_gpu が false です"
                     )
-                if not config.services.ray.gpu.enabled:
-                    raise ValueError(
-                        "cluster_test.target=gpu ですが"
-                        " services.ray.gpu.enabled が false です"
-                    )
 
             progress.add_task("Rendering cluster test template...", total=None)
-            output = self.render_template(config, self.test_template_path.name)
+            output = self.render_template(
+                config,
+                self.test_template_path.name,
+                force_test_head_whitelist=True,
+            )
 
             # Ensure output directory exists
             self.test_output_path.parent.mkdir(parents=True, exist_ok=True)

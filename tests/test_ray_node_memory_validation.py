@@ -7,7 +7,7 @@
 import pytest
 from pydantic import ValidationError
 
-from ws_src.models import RayCPUConfig
+from ws_src.models import RayCPUSchema
 
 
 @pytest.mark.parametrize(
@@ -22,7 +22,7 @@ from ws_src.models import RayCPUConfig
 def test_memory_validation_accepts_valid_values_and_normalizes(
     memory: str, expected: str
 ):
-    config = RayCPUConfig(memory=memory)
+    config = RayCPUSchema(memory=memory)
     assert config.memory == expected
 
 
@@ -32,4 +32,4 @@ def test_memory_validation_accepts_valid_values_and_normalizes(
 )
 def test_memory_validation_rejects_invalid_values(memory: str):
     with pytest.raises(ValidationError):
-        RayCPUConfig(memory=memory)
+        RayCPUSchema(memory=memory)

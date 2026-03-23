@@ -79,32 +79,59 @@ nodes:
 
 ## services セクション
 
-### services.ray.cpu / services.ray.gpu
+### services.ray
 
-共通フィールド:
+`services.ray` は次の 4 ブロックで構成されます。
 
-| フィールド | 型 | デフォルト | 説明 |
-|---|---|---|---|
-| `enabled` | `bool` | `true` | サービス有効化 |
-| `image` | `str \| null` | cpu:`rayproject/ray:latest` / gpu:`rayproject/ray:latest-gpu` | Docker イメージ |
-| `cpus` | `float \| null` | `null` | CPU 制限 |
-| `memory` | `str \| null` | `null` | 例: `8g`, `512m` |
-| `head_port` | `int` | cpu:`6379` / gpu:`6380` | Head ポート |
-| `dashboard_port` | `int` | cpu:`8265` / gpu:`8266` | Dashboard ポート |
-| `client_port` | `int` | cpu:`10001` / gpu:`10002` | Ray Client ポート |
-| `node_ip_address` | `str \| null` | `null` | Advertised IP |
-| `node_manager_port` | `int \| null` | `null` | 固定 NodeManager ポート |
-| `object_manager_port` | `int \| null` | `null` | 固定 ObjectManager ポート |
-| `min_worker_port` | `int \| null` | `null` | worker ポート範囲(最小) |
-| `max_worker_port` | `int \| null` | `null` | worker ポート範囲(最大) |
+| フィールド | 型 | 説明 |
+|---|---|---|
+| `target` | `"cpu" \| "gpu"` | 通常運用で起動する Ray ノードタイプ |
+| `default` | `object` | CPU/GPU 共通の必須フォールバック値 |
+| `cpu` | `object` | CPU ノードの上書き値（未指定は `default` を使用） |
+| `gpu` | `object` | GPU ノードの上書き値（未指定は `default` を使用） |
+
+#### services.ray.default（必須）
+
+| フィールド | 型 | 説明 |
+|---|---|---|
+| `image` | `str` | 既定 Docker イメージ |
+| `build` | `object` | 既定ビルド設定 |
+| `cpus` | `float` | CPU 制限 |
+| `memory` | `str` | 例: `8g`, `512m` |
+| `head_port` | `int` | Head ポート |
+| `dashboard_port` | `int` | Dashboard ポート |
+| `client_port` | `int` | Ray Client ポート |
+| `node_ip_address` | `str \| null` | Advertised IP |
+| `node_manager_port` | `int \| null` | 固定 NodeManager ポート |
+| `object_manager_port` | `int \| null` | 固定 ObjectManager ポート |
+| `min_worker_port` | `int \| null` | worker ポート範囲(最小) |
+| `max_worker_port` | `int \| null` | worker ポート範囲(最大) |
+
+#### services.ray.cpu / services.ray.gpu（上書き）
+
+共通上書きフィールド（すべて任意）:
+
+| フィールド | 型 | 説明 |
+|---|---|---|
+| `image` | `str \| null` | Docker イメージ上書き |
+| `build` | `object \| null` | ビルド設定上書き |
+| `cpus` | `float \| null` | CPU 制限上書き |
+| `memory` | `str \| null` | メモリ上書き |
+| `head_port` | `int \| null` | Head ポート上書き |
+| `dashboard_port` | `int \| null` | Dashboard ポート上書き |
+| `client_port` | `int \| null` | Ray Client ポート上書き |
+| `node_ip_address` | `str \| null` | Advertised IP 上書き |
+| `node_manager_port` | `int \| null` | NodeManager ポート上書き |
+| `object_manager_port` | `int \| null` | ObjectManager ポート上書き |
+| `min_worker_port` | `int \| null` | worker 範囲最小上書き |
+| `max_worker_port` | `int \| null` | worker 範囲最大上書き |
 
 GPU 追加フィールド:
 
 | フィールド | 型 | デフォルト |
 |---|---|---|
+| `num_gpus` | `int` | `1` |
 | `runtime` | `str` | `nvidia` |
-
-`services.ray.image` は cpu/gpu の `image` 未指定時のフォールバックとして使われます。
 
 ### services.mlflow
 
@@ -235,7 +262,8 @@ CSLR_SERVICES__MLFLOW__POSTGRES__PASSWORD="secure_password_here"
 例:
 
 ```bash
-CSLR_SERVICES__RAY__CPU__CPUS=8
+CSLR_SERVICES__RAY__TARGET=gpu
+CSLR_SERVICES__RAY__DEFAULT__CPUS=8
 CSLR_SERVICES__RAY__GPU__IMAGE=rayproject/ray:latest-gpu
 CSLR_CLUSTER_TEST__TARGET=gpu
 CSLR_NETWORK__SUBNET=10.0.0.0/16
@@ -260,7 +288,7 @@ CSLR_NODES__HEAD_WHITELIST=ray-cpu,ray-gpu
 
 ### 1) 重要点
 
-- 通常運用では `ray-cpu` / `ray-gpu` を同時に有効化しない前提です。
+- 通常運用では `services.ray.target` で `ray-cpu` / `ray-gpu` のどちらか一方を選択します。
 - CPU/GPU 同時起動は `cluster_test`（`ws test`）用途に限定します。
 
 ### 2) 実行レベル制限

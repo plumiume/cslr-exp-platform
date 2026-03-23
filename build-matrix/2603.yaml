@@ -46,18 +46,18 @@ matrix:
     variants: ["devel", "runtime"]
 
   # CUDA 13.x系 + Python 3.13
-  - cuda_version: "13.2.0"
+  - cuda_version: "13.0.2"
     python_version: "3.13"
-    cuda_tag: "cu132"
+    cuda_tag: "cu130"
     torch_version: "2.10.0"
     ray_version: "2.54.0"
     services: ["simple", "ray", "marimo"]
     variants: ["devel", "runtime"]
 
   # CUDA 13.x系 + Python 3.14
-  - cuda_version: "13.2.0"
+  - cuda_version: "13.0.2"
     python_version: "3.14"
-    cuda_tag: "cu132"
+    cuda_tag: "cu130"
     torch_version: "2.10.0"
     ray_version: "3.0.0.dev0"
     services: ["simple", "ray", "marimo"]
@@ -71,9 +71,9 @@ build_options:
 
 # 最小構成（テスト用）
 minimal_build:
-  cuda_version: "13.2.0"
+  cuda_version: "13.0.2"
   python_version: "3.13"
-  cuda_tag: "cu132"
+  cuda_tag: "cu130"
   torch_version: "2.10.0"
   ray_version: "2.54.0"
   service: "marimo"
