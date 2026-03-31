@@ -53,6 +53,7 @@ FROM ${BASE_IMAGE} AS simple-builder
 
 ARG PYTHON_VERSION
 ARG CUDA_TAG
+ARG TORCH_VERSION
 ENV DEBIAN_FRONTEND=noninteractive
 ENV CONDA_DIR=/opt/conda
 ENV PATH=${CONDA_DIR}/bin:${PATH}
@@ -94,10 +95,14 @@ ENV PATH=/usr/lib/ccache:${PATH}
 # --mount=type=cache でローカルキャッシュを活用するため --no-cache-dir は付けない
 RUN --mount=type=cache,target=/root/.cache/pip \
     pip install \
-        torch torchvision torchaudio \
+        torch==${TORCH_VERSION} torchvision torchaudio \
         --index-url https://download.pytorch.org/whl/${CUDA_TAG}
 
 RUN python -c "import torch; print(f'PyTorch {torch.__version__}, CUDA {torch.version.cuda}, cuDNN {torch.backends.cudnn.version()}')"
+
+# --- Utils ---
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip install lightning mlflow
 
 # --- Ninja (PyG拡張ビルドに必須) ---
 RUN --mount=type=cache,target=/root/.cache/pip \
